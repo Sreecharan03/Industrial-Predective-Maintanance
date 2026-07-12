@@ -1,0 +1,90 @@
+# SenseMinds 360 - local production stack.
+# Usage (from deployment/):  docker compose up --build
+#   dev tools:               docker compose --profile dev up
+# Provide secrets via a .env file next to this compose (see .env.example).
+
+x-app-env: &app-env
+  SENSEMINDS_ENVIRONMENT: ${SENSEMINDS_ENVIRONMENT:-prod}
+  SENSEMINDS_LOG_LEVEL: ${SENSEMINDS_LOG_LEVEL:-INFO}
+  SENSEMINDS_DATABASE_URL: postgresql+psycopg://senseminds:${POSTGRES_PASSWORD:-senseminds}@postgres:5432/senseminds
+  SENSEMINDS_ARTIFACT_ROOT: /data/artifacts
+  SENSEMINDS_LEGACY_REPORTS_ROOT: /data/datasets
+  SENSEMINDS_JWT_SECRET: ${SENSEMINDS_JWT_SECRET:-dev-insecure-change-me}
+  SENSEMINDS_DEFAULT_ADMIN_PASSWORD: ${SENSEMINDS_DEFAULT_ADMIN_PASSWORD:-admin}
+  SENSEMINDS_GROQ_API_KEY: ${SENSEMINDS_GROQ_API_KEY:-}
+  SENSEMINDS_LLM_MODEL: ${SENSEMINDS_LLM_MODEL:-llama-3.3-70b-versatile}
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: senseminds
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-senseminds}
+      POSTGRES_DB: senseminds
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [smnet]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U senseminds"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: { context: .., dockerfile: Dockerfile }
+    command: ["python", "-m", "senseminds.infrastructure.db.migrate"]
+    environment: *app-env
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [smnet]
+    restart: "no"
+
+  api:
+    build: { context: .., dockerfile: Dockerfile }
+    command: ["uvicorn", "senseminds.api.asgi:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment: *app-env
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    ports: ["8000:8000"]
+    volumes:
+      - artifacts:/data/artifacts
+      - ../../Datasets:/data/datasets:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [smnet]
+
+  worker:
+    build: { context: .., dockerfile: Dockerfile }
+    command: ["python", "-m", "senseminds.workers.analysis_worker"]
+    environment:
+      <<: *app-env
+      SENSEMINDS_WORKER_INTERVAL_SECONDS: ${SENSEMINDS_WORKER_INTERVAL_SECONDS:-300}
+      SENSEMINDS_BOOTSTRAP_ON_START: ${SENSEMINDS_BOOTSTRAP_ON_START:-true}
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    volumes:
+      - artifacts:/data/artifacts
+      - ../../Datasets:/data/datasets:ro
+    networks: [smnet]
+
+  pgadmin:
+    image: dpage/pgadmin4
+    profiles: ["dev"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@senseminds.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports: ["5050:80"]
+    depends_on: [postgres]
+    networks: [smnet]
+
+volumes:
+  pgdata: {}
+  artifacts: {}
+
+networks:
+  smnet: { driver: bridge }

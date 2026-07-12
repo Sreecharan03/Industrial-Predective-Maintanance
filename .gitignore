@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Environments & secrets
+.venv/
+venv/
+.env
+deployment/.env
+*.pem
+
+# Runtime data / artifacts (never commit generated state)
+artifacts/
+/data/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
