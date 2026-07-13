@@ -114,6 +114,18 @@ class PostgresFindingRepository(FindingRepository):
         )
         return [Finding.model_validate(_as_dict(r[0])) for r in rows]
 
+    def current(self, unit: str) -> list[Finding]:
+        # One row per condition: the newest observation of each identity_key.
+        rows = self._s.execute(
+            text(
+                "SELECT DISTINCT ON (identity_key) document FROM application.finding "
+                "WHERE unit = :unit "
+                "ORDER BY identity_key, produced_at DESC, finding_id DESC"
+            ),
+            {"unit": unit},
+        )
+        return [Finding.model_validate(_as_dict(r[0])) for r in rows]
+
     def history(self, identity_key: str) -> list[Finding]:
         rows = self._s.execute(
             text("SELECT document FROM application.finding WHERE identity_key = :idk "

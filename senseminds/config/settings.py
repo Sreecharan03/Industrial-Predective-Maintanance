@@ -91,6 +91,26 @@ class Settings(BaseSettings):
         default=True, description="Load processed CSVs into sensor history if empty, on start."
     )
 
+    # Live machine simulator (testing / demo). Generates 30-second data.
+    live_data_root: Path = Field(
+        default=Path("./live_data"), description="Where the growing 30s CSVs are written."
+    )
+    sim_backfill_days: float = Field(
+        default=3.0, description="History to back-fill so the engines have a baseline."
+    )
+    sim_reset: bool = Field(
+        default=True, description="Wipe sensor history + findings before seeding the demo."
+    )
+    sim_drift_unit: str = Field(
+        default="SC-126", description="Machine given a slow degradation (empty = none)."
+    )
+    sim_drift_column: str = Field(
+        default="Discharge Pressure", description="Sensor that drifts toward its limit."
+    )
+    sim_drift_ramp_minutes: float = Field(
+        default=20.0, description="Minutes for the drift to cross the operating limit."
+    )
+
     @field_validator("log_level")
     @classmethod
     def _valid_log_level(cls, value: str) -> str:

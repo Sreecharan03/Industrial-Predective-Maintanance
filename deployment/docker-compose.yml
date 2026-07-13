@@ -72,6 +72,30 @@ services:
       - ../../Datasets:/data/datasets:ro
     networks: [smnet]
 
+  # Live machine simulator — generates 30-second data for all 6 machines, tails it
+  # just after each tick, ingests + re-analyses. Opt-in:
+  #   docker compose --profile sim up -d simulator      (stop `worker` first)
+  simulator:
+    build: { context: .., dockerfile: Dockerfile }
+    command: ["python", "-m", "senseminds.simulation.main"]
+    profiles: ["sim"]
+    environment:
+      <<: *app-env
+      SENSEMINDS_LIVE_DATA_ROOT: /data/live
+      SENSEMINDS_SIM_BACKFILL_DAYS: ${SENSEMINDS_SIM_BACKFILL_DAYS:-3}
+      SENSEMINDS_SIM_RESET: ${SENSEMINDS_SIM_RESET:-true}
+      SENSEMINDS_SIM_DRIFT_UNIT: ${SENSEMINDS_SIM_DRIFT_UNIT:-SC-126}
+      SENSEMINDS_SIM_DRIFT_COLUMN: ${SENSEMINDS_SIM_DRIFT_COLUMN:-Discharge Pressure}
+      SENSEMINDS_SIM_DRIFT_RAMP_MINUTES: ${SENSEMINDS_SIM_DRIFT_RAMP_MINUTES:-20}
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    volumes:
+      - artifacts:/data/artifacts
+      - ../../Datasets:/data/datasets:ro
+      - livedata:/data/live
+    networks: [smnet]
+
   dashboard:
     build: { context: ../frontend, dockerfile: Dockerfile }
     depends_on:
@@ -92,6 +116,7 @@ services:
 volumes:
   pgdata: {}
   artifacts: {}
+  livedata: {}
 
 networks:
   smnet: { driver: bridge }

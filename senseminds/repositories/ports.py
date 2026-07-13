@@ -53,7 +53,17 @@ class FindingRepository(ABC):
 
     @abstractmethod
     def for_unit(self, unit: str) -> list[Finding]:
-        """All findings for a unit, oldest observation first."""
+        """Every observation ever recorded for a unit (full append-only history)."""
+
+    @abstractmethod
+    def current(self, unit: str) -> list[Finding]:
+        """The unit's CURRENT state: the latest observation of each condition.
+
+        Findings are append-only, so a re-analysis of new data appends a fresh
+        observation of the same condition (same identity_key, new finding_id).
+        Consumers that want "what is true now" — the dashboard, the LLM — must use
+        this, not the whole history, or they see every past observation too.
+        """
 
     @abstractmethod
     def history(self, identity_key: str) -> list[Finding]:

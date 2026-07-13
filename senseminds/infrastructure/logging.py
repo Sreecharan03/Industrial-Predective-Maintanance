@@ -57,6 +57,20 @@ def configure_logging(level: str = "INFO") -> None:
     _CONFIGURED = True
 
 
+class _ContextAdapter(logging.LoggerAdapter):
+    """Merges the bound context with each call's `extra`.
+
+    The stdlib LoggerAdapter *replaces* ``kwargs["extra"]`` with its own dict,
+    which silently discards the structured fields every call site passes. We merge
+    instead, so per-call context actually reaches the JSON output.
+    """
+
+    def process(self, msg: str, kwargs: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        merged = {**(self.extra or {}), **(kwargs.get("extra") or {})}
+        kwargs["extra"] = merged
+        return msg, kwargs
+
+
 def get_logger(name: str, **context: object) -> logging.LoggerAdapter:
     """Return a logger that stamps `context` onto every record it emits."""
-    return logging.LoggerAdapter(logging.getLogger(name), dict(context))
+    return _ContextAdapter(logging.getLogger(name), dict(context))

@@ -32,8 +32,11 @@ class EvidenceRetriever:
         self._db = db
 
     def retrieve(self, unit: str, question: str = "") -> EvidenceBundle:
+        # CURRENT state only: the latest observation of each condition. Feeding the
+        # whole append-only history would make the model narrate stale observations
+        # as if they were true now.
         with UnitOfWork(self._db) as uow:
-            findings = uow.findings.for_unit(unit)
+            findings = uow.findings.current(unit)
         items = tuple(
             EvidenceItem(
                 ref=f.finding_id, kind="finding", category=_category(f),

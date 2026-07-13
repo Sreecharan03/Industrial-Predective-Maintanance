@@ -43,10 +43,17 @@ def get_findings(
     origin: str | None = Query(default=None),
     category: str | None = Query(default=None),
     severity: str | None = Query(default=None),
+    history: bool = Query(
+        default=False,
+        description="Full append-only history instead of the current state.",
+    ),
     app: AppState = Depends(state),
 ) -> list[dict]:
+    # Default = CURRENT state (latest observation per condition). Findings are
+    # append-only, so every re-analysis appends a new observation of the same
+    # condition; returning the whole history here would flood the UI.
     with UnitOfWork(app.db) as uow:
-        findings = uow.findings.for_unit(unit)
+        findings = uow.findings.for_unit(unit) if history else uow.findings.current(unit)
     result = [
         f for f in findings
         if (origin is None or f.origin.value == origin)
@@ -59,7 +66,7 @@ def get_findings(
 @router.get("/{unit}/diagnoses")
 def get_diagnoses(unit: str, app: AppState = Depends(state)) -> list[dict]:
     with UnitOfWork(app.db) as uow:
-        findings = uow.findings.for_unit(unit)
+        findings = uow.findings.current(unit)
     return [f.model_dump(mode="json") for f in findings if f.origin.value == "diagnosed"]
 
 
