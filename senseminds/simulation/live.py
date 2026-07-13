@@ -75,7 +75,13 @@ class LiveSimulator:
         _log.info("simulator_reset")
 
     def seed(self) -> list[str]:
-        """Learn each machine's profile, write a back-filled 30s CSV, ingest it."""
+        """Learn each machine's profile, back-fill a 30s CSV, ingest it.
+
+        **Resumable.** The CSVs live on persistent storage, so on a restart we do
+        NOT regenerate history — we keep appending to the existing file. And because
+        ingestion is watermark-driven, if the database was lost but the CSVs survived,
+        everything in them is simply re-ingested: the CSVs are the recovery source.
+        """
         cfg = self._cfg
         cfg.live_dir.mkdir(parents=True, exist_ok=True)
         if cfg.reset:
@@ -90,12 +96,17 @@ class LiveSimulator:
             gen = MachineGenerator(unit, profiles, self._live_start, drift)
             self._generators[unit] = gen
 
-            rows = gen.rows_between(start, self._live_start)
             path = cfg.live_dir / _UNIT_FILE_MAP[unit]
-            pd.DataFrame(rows).to_csv(path, index=False)
-            _log.info("simulator_seeded", extra={"unit": unit, "rows": len(rows)})
+            if path.exists() and not cfg.reset:
+                rows = sum(1 for _ in path.open()) - 1
+                _log.info("simulator_resumed", extra={"unit": unit, "existing_rows": rows})
+                continue
 
-        self.ingest_and_analyse(units)
+            rows_out = gen.rows_between(start, self._live_start)
+            pd.DataFrame(rows_out).to_csv(path, index=False)
+            _log.info("simulator_seeded", extra={"unit": unit, "rows": len(rows_out)})
+
+        self.ingest_and_analyse(units)  # re-ingests anything the DB is missing
         return units
 
     # ------------------------------ live ticks ------------------------------

@@ -120,6 +120,17 @@ export interface EngineRun {
   artifact_ids: string[];
 }
 
+export interface SensorPoint { t: string; v: number }
+export interface SensorTrace {
+  key: string;
+  display_name: string;
+  unit_symbol: string;
+  latest: { time: string; value: number } | null;
+  threshold: { low: number | null; high: number | null } | null;
+  points: SensorPoint[];
+}
+export interface Telemetry { unit: string; hours: number; sensors: SensorTrace[] }
+
 export interface GroundedClaim {
   text: string;
   category: "fact" | "diagnosis" | "hypothesis" | "forecast";
@@ -157,6 +168,11 @@ export const api = {
       `/assets/${encodeURIComponent(unit)}/graph`,
     ),
   runs: (unit: string) => req<EngineRun[]>(`/runs/${encodeURIComponent(unit)}`),
+
+  telemetry: (unit: string, hours = 6) =>
+    req<Telemetry>(
+      `/assets/${encodeURIComponent(unit)}/telemetry?hours=${hours}&points=90`,
+    ),
 
   analyze: (unit: string) =>
     req<{ unit: string; run_id: string | null; finding_count: number; replayed: boolean }>(

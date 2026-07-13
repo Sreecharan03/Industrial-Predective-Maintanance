@@ -16,19 +16,24 @@ x-app-env: &app-env
 
 services:
   postgres:
+    restart: unless-stopped
     image: timescale/timescaledb:latest-pg16
     environment:
       POSTGRES_USER: senseminds
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-senseminds}
       POSTGRES_DB: senseminds
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ${SM_DATA:-../../senseminds-data}/pgdata:/var/lib/postgresql/data
     networks: [smnet]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U senseminds"]
+      # -h 127.0.0.1 forces a TCP check. Without it pg_isready passes against the
+      # temporary socket-only server initdb runs on first boot, and dependents
+      # connect before Postgres is really listening.
+      test: ["CMD-SHELL", "pg_isready -U senseminds -h 127.0.0.1 -p 5432"]
       interval: 5s
       timeout: 3s
-      retries: 20
+      retries: 30
+      start_period: 20s
 
   migrate:
     build: { context: .., dockerfile: Dockerfile }
@@ -40,6 +45,7 @@ services:
     restart: "no"
 
   api:
+    restart: unless-stopped
     build: { context: .., dockerfile: Dockerfile }
     command: ["uvicorn", "senseminds.api.asgi:app", "--host", "0.0.0.0", "--port", "8000"]
     environment: *app-env
@@ -48,7 +54,7 @@ services:
       migrate: { condition: service_completed_successfully }
     ports: ["8000:8000"]
     volumes:
-      - artifacts:/data/artifacts
+      - ${SM_DATA:-../../senseminds-data}/artifacts:/data/artifacts
       - ../../Datasets:/data/datasets:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/ready"]
@@ -57,7 +63,11 @@ services:
       retries: 12
     networks: [smnet]
 
+  # Batch mode: loads the REAL historical CSVs and analyses on an interval.
+  # Mutually exclusive with `simulator`.  docker compose --profile batch up -d worker
   worker:
+    restart: unless-stopped
+    profiles: ["batch"]
     build: { context: .., dockerfile: Dockerfile }
     command: ["python", "-m", "senseminds.workers.analysis_worker"]
     environment:
@@ -68,7 +78,7 @@ services:
       postgres: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
     volumes:
-      - artifacts:/data/artifacts
+      - ${SM_DATA:-../../senseminds-data}/artifacts:/data/artifacts
       - ../../Datasets:/data/datasets:ro
     networks: [smnet]
 
@@ -83,7 +93,7 @@ services:
       <<: *app-env
       SENSEMINDS_LIVE_DATA_ROOT: /data/live
       SENSEMINDS_SIM_BACKFILL_DAYS: ${SENSEMINDS_SIM_BACKFILL_DAYS:-3}
-      SENSEMINDS_SIM_RESET: ${SENSEMINDS_SIM_RESET:-true}
+      SENSEMINDS_SIM_RESET: ${SENSEMINDS_SIM_RESET:-false}
       SENSEMINDS_SIM_DRIFT_UNIT: ${SENSEMINDS_SIM_DRIFT_UNIT:-SC-126}
       SENSEMINDS_SIM_DRIFT_COLUMN: ${SENSEMINDS_SIM_DRIFT_COLUMN:-Discharge Pressure}
       SENSEMINDS_SIM_DRIFT_RAMP_MINUTES: ${SENSEMINDS_SIM_DRIFT_RAMP_MINUTES:-20}
@@ -91,12 +101,13 @@ services:
       postgres: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
     volumes:
-      - artifacts:/data/artifacts
+      - ${SM_DATA:-../../senseminds-data}/artifacts:/data/artifacts
       - ../../Datasets:/data/datasets:ro
-      - livedata:/data/live
+      - ${SM_DATA:-../../senseminds-data}/live:/data/live
     networks: [smnet]
 
   dashboard:
+    restart: unless-stopped
     build: { context: ../frontend, dockerfile: Dockerfile }
     depends_on:
       api: { condition: service_started }
@@ -112,11 +123,6 @@ services:
     ports: ["5050:80"]
     depends_on: [postgres]
     networks: [smnet]
-
-volumes:
-  pgdata: {}
-  artifacts: {}
-  livedata: {}
 
 networks:
   smnet: { driver: bridge }

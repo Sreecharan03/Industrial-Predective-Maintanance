@@ -17,7 +17,7 @@ from fastapi import FastAPI, Request, Response
 
 from senseminds import __version__
 from senseminds.api.deps import build_state
-from senseminds.api.routers import analysis, assets, auth, ingest, llm, ops
+from senseminds.api.routers import analysis, assets, auth, ingest, llm, ops, telemetry
 from senseminds.api.seed import seed_identity
 from senseminds.config import Settings, get_settings
 from senseminds.infrastructure.logging import configure_logging, get_logger
@@ -63,6 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return response
 
     app.include_router(ops.router)  # health/ready/metrics at root
-    for r in (auth.router, assets.router, analysis.router, ingest.router, llm.router):
+    for r in (auth.router, assets.router, telemetry.router, analysis.router,
+              ingest.router, llm.router):
         app.include_router(r, prefix=_API_V1)
     return app

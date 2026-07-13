@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
-  api, type Asset, type EngineRun, type Finding, type Report,
+  api, type Asset, type EngineRun, type Finding, type Report, type Telemetry,
 } from "../lib/api";
+import { SensorChart, isBreaching } from "../components/SensorChart";
 import { CLASSES, SEVERITY, healthScore, prettySensor, worst } from "../lib/ui";
 import {
   Empty, FindingCard, HealthRing, Icon, Spinner, StatCard, StatusPill,
@@ -24,6 +25,8 @@ export default function AssetDetail() {
   const [reports, setReports] = useState<Report[]>([]);
   const [runs, setRuns] = useState<EngineRun[]>([]);
   const [graph, setGraph] = useState<{ nodes: unknown[]; edges: unknown[] } | null>(null);
+  const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
+  const [hours, setHours] = useState(6);
   const [tab, setTab] = useState<Tab>("findings");
   const [filter, setFilter] = useState<"all" | "derived" | "diagnosed" | "learned">("all");
   const [busy, setBusy] = useState(false);
@@ -43,6 +46,19 @@ export default function AssetDetail() {
   };
 
   useEffect(() => { setLoading(true); load(); /* eslint-disable-next-line */ }, [unit]);
+
+  // Telemetry is fetched only when it is actually being looked at (ADR-018: raw
+  // readings are an explicit request, never a default), and refreshed on the
+  // simulator's 30s cadence so the chart tracks the live feed.
+  useEffect(() => {
+    if (tab !== "sensors" || !unit) return;
+    let alive = true;
+    const pull = () =>
+      api.telemetry(unit, hours).then((t) => { if (alive) setTelemetry(t); }).catch(() => {});
+    pull();
+    const id = setInterval(pull, 30_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [unit, tab, hours]);
 
   const analyse = async () => {
     setBusy(true); setNote("");
@@ -159,34 +175,83 @@ export default function AssetDetail() {
       )}
 
       {tab === "sensors" && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {asset.subsystems.map((sub) => (
-            <div key={sub.key} className="card p-5 animate-rise">
-              <p className="eyebrow">{sub.display_name}</p>
-              <ul className="mt-3 space-y-2">
-                {sub.sensor_keys.map((key) => {
-                  const s = asset.sensors.find((x) => x.key === key);
-                  const worstF = worst(
-                    findings.filter((f) => f.target_key === key).map((f) => f.severity),
-                  );
-                  return (
-                    <li key={key}
-                      className="flex items-center justify-between gap-3 rounded-xl
-                                 bg-canvas border border-line px-3 py-2">
-                      <span className="flex items-center gap-2 min-w-0">
-                        <span className={`h-1.5 w-1.5 rounded-full ${SEVERITY[worstF].dot}`} />
-                        <span className="text-sm font-medium truncate">{prettySensor(key)}</span>
-                      </span>
-                      <span className="num text-xs text-ink-muted shrink-0">
-                        {s?.unit.symbol ?? "—"}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
+        <section className="space-y-4 animate-rise">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-ink-soft">
+              Live readings, sampled every 30&nbsp;s. The shaded band is the supplied
+              operating range — telemetry is shown here only, never used for reasoning.
+            </p>
+            <div className="flex gap-1 rounded-xl bg-canvas border border-line p-1">
+              {[1, 6, 24].map((h) => (
+                <button key={h} onClick={() => setHours(h)}
+                  className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
+                    hours === h ? "bg-white text-brand-700 shadow-sm" : "text-ink-muted hover:text-ink"
+                  }`}>
+                  {h}h
+                </button>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+
+          {!telemetry ? (
+            <div className="card p-10 flex justify-center"><Spinner /></div>
+          ) : (
+            asset.subsystems.map((sub) => {
+              const traces = sub.sensor_keys
+                .map((k) => telemetry.sensors.find((t) => t.key === k))
+                .filter(Boolean) as NonNullable<Telemetry["sensors"][number]>[];
+              if (!traces.length) return null;
+              return (
+                <div key={sub.key} className="space-y-3">
+                  <p className="eyebrow">{sub.display_name}</p>
+                  <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                    {traces.map((t) => {
+                      const breach = isBreaching(t);
+                      const sev = worst(
+                        findings.filter((f) => f.target_key === t.key).map((f) => f.severity),
+                      );
+                      const S = SEVERITY[breach ? "critical" : sev];
+                      return (
+                        <div key={t.key} className="card p-4">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold truncate">
+                                {prettySensor(t.key)}
+                              </p>
+                              <p className="mt-1 flex items-baseline gap-1">
+                                <span className="num text-2xl font-bold tracking-tight">
+                                  {t.latest ? t.latest.value : "—"}
+                                </span>
+                                <span className="num text-xs text-ink-muted">
+                                  {t.unit_symbol}
+                                </span>
+                              </p>
+                            </div>
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2
+                                              py-0.5 text-[11px] font-semibold ring-1 ${S.pill}`}>
+                              <Icon name={S.icon} className="text-[13px]" />
+                              {breach ? "Out of range" : S.label}
+                            </span>
+                          </div>
+
+                          <div className="mt-2">
+                            <SensorChart sensor={t} hours={hours} />
+                          </div>
+
+                          <p className="mt-1 num text-[11px] text-ink-3">
+                            {t.threshold
+                              ? `limit ${t.threshold.low ?? "−∞"} – ${t.threshold.high ?? "∞"} ${t.unit_symbol}`
+                              : "no supplied limit"}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </section>
       )}
 
       {tab === "graph" && (

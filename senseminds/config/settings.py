@@ -99,7 +99,8 @@ class Settings(BaseSettings):
         default=3.0, description="History to back-fill so the engines have a baseline."
     )
     sim_reset: bool = Field(
-        default=True, description="Wipe sensor history + findings before seeding the demo."
+        default=False,
+        description="Wipe sensor history + findings before seeding (destroys persisted data).",
     )
     sim_drift_unit: str = Field(
         default="SC-126", description="Machine given a slow degradation (empty = none)."
