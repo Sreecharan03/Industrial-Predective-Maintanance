@@ -21,23 +21,171 @@ layer is explainable, reproducible, and can be traced back to the exact data and
 rule that produced it. The LLM is a *narrator over grounded evidence*, never a
 source of truth — and it is architecturally prevented from hallucinating.
 
+```mermaid
+flowchart LR
+    RAW["Sensor readings"] --> ENG["Deterministic engines<br/>statistics · thresholds · operating-state<br/>envelope · timeline · reliability · health"]
+    ENG --> FIND["Engineering findings<br/><i>measured facts</i>"]
+    FIND --> RULE["Rule engine<br/><i>likely causes</i>"]
+    FIND --> KG["Knowledge graph"]
+    RULE --> KG
+    FIND -.-> PL["Pattern learning<br/><i>early signals</i>"]
+    FIND -.-> FC["Forecasting<br/><i>advisory</i>"]
+    KG --> LLM["Grounded LLM<br/><i>every claim cited</i>"]
+    RULE --> LLM
+    PL -.-> LLM
+    FC -.-> LLM
+    LLM --> UI["REST API · Dashboard"]
+
+    classDef fact fill:#EDE9FE,stroke:#7C3AED,color:#4C1D95
+    classDef hyp fill:#FBEAFE,stroke:#C026D3,color:#86198F,stroke-dasharray:4 3
+    classDef out fill:#E7F6F4,stroke:#0F9D8F,color:#0B5D55
+    class ENG,FIND,RULE,KG fact
+    class PL,FC hyp
+    class LLM,UI out
 ```
-Sensor history (TimescaleDB)
-      │
-      ▼
-Deterministic analytics (7 engines: statistics, thresholds, operating-state,
-      │                   envelope, timeline, reliability, health)
-      ▼
-Engineering Findings  ──►  Knowledge Graph  ──►  Rule Engine (diagnoses)
-      │                                              │
-      ├──► Pattern Learning (unsupervised novelty / regimes)   [Phase B]
-      ├──► Forecasting (short-horizon, backtested)             [Phase B]
-      ▼
-Grounded LLM communication layer (cited, register-aware)  ──►  REST API / Dashboard
-```
+
+Solid = deterministic and certain. Dashed = learned, advisory, never confirmed.
+The LLM sits at the *end* — it explains, it never decides.
 
 Design is captured in **19 Architecture Decision Records** under
 [`docs/architecture/`](docs/architecture/) (ADR-001 … ADR-019).
+
+---
+
+## How it works
+
+### System architecture
+
+```mermaid
+flowchart TB
+    subgraph SRC["1 · Where data comes in"]
+        M["Real machines<br/>OPC-UA / MQTT / historian"]
+        API_IN["POST /api/v1/readings"]
+        SIM["Simulator<br/>30s synthetic feed"]
+        CSV["Processed CSVs<br/>one-shot bootstrap"]
+    end
+
+    subgraph ING["2 · Ingestion"]
+        VAL["ReadingValidation<br/>timestamps · duplicates · bad values"]
+        SINK["ReadingSink<br/>idempotent write"]
+    end
+
+    TS[("TimescaleDB<br/>sensor_history")]
+
+    subgraph AN["3 · Analysis — one atomic transaction"]
+        SRC2["DbTimeSeriesSource"]
+        PIPE["7 deterministic engines"]
+        ASM["Findings assembler"]
+        RULES["Rule engine"]
+        PROJ["Graph projector"]
+    end
+
+    subgraph DB["4 · Persistence"]
+        APP[("application<br/>findings · reports · runs")]
+        KNOW[("knowledge<br/>graph")]
+        ART[("artifacts")]
+    end
+
+    subgraph SERVE["5 · Serving"]
+        REST["REST API<br/>JWT + roles"]
+        COP["Grounded Copilot<br/>Groq / offline stub"]
+        DASH["Dashboard<br/>twin · charts · findings"]
+    end
+
+    M & API_IN & SIM & CSV --> VAL --> SINK --> TS
+    TS --> SRC2 --> PIPE --> ASM --> RULES --> PROJ
+    PROJ --> APP & KNOW & ART
+    APP & KNOW --> REST --> DASH
+    APP --> COP --> DASH
+
+    classDef store fill:#E7F6F4,stroke:#0F9D8F,color:#0B5D55
+    class TS,APP,KNOW,ART store
+```
+
+**Everything in step 3 commits or rolls back together** — findings, graph, report,
+run record. A re-run of the same data is a no-op (idempotent on `input_hash`).
+
+### The live loop — what happens every 30 seconds
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant M as Machine / Simulator
+    participant I as Ingestion
+    participant DB as TimescaleDB
+    participant A as AnalysisUseCase
+    participant U as Dashboard
+
+    M->>I: new reading (:00 / :30)
+    I->>I: validate
+    I->>DB: append (idempotent)
+    Note over A: just after the tick
+    A->>DB: read history
+    A->>A: run engines → findings → rules
+    alt data unchanged
+        A-->>A: same input_hash → no-op
+    else new data
+        A->>DB: persist findings + graph + run<br/>(one transaction)
+    end
+    U->>DB: poll current state
+    U-->>U: charts, twin hotspots and health update
+```
+
+### What a user actually does
+
+```mermaid
+flowchart TD
+    L["Sign in"] --> O["Overview<br/><i>Is anything wrong?</i>"]
+    O --> Q{"Anything<br/>critical?"}
+
+    Q -->|Yes| N["The machine is named<br/><i>e.g. SC-126 past a safe limit</i>"]
+    Q -->|No| CALM["Nothing is failing —<br/>mis-set limits worth reviewing"]
+
+    N --> AD["Open the machine"]
+    CALM --> AD
+
+    AD --> T{"How do you<br/>want to look?"}
+    T -->|See it| TW["Digital Twin<br/>the faulty sensor glows red"]
+    T -->|Read it| ISS["Issues<br/>plain English + Details"]
+    T -->|Trend it| SEN["Sensors<br/>live value + normal range"]
+    T -->|Trace it| CON["Connections<br/>knowledge graph"]
+
+    TW & ISS & SEN & CON --> ASK["Ask the Copilot<br/><i>“what needs attention?”</i>"]
+    ASK --> ANS["Cited answer —<br/>or “insufficient evidence”"]
+    ANS --> ACT["Act: review a limit,<br/>or attend to a real breach"]
+
+    classDef bad fill:#FFE4E9,stroke:#BE123C,color:#881337
+    classDef good fill:#DCFCE7,stroke:#15803D,color:#14532D
+    class N,ACT bad
+    class CALM good
+```
+
+### UI map
+
+```mermaid
+flowchart LR
+    LOGIN["/login"] --> OV["/overview<br/>plant health · fleet · what needs a look"]
+
+    OV --> F1["/refrigeration"]
+    OV --> F2["/air-compressors"]
+    OV --> F3["/nitrogen"]
+    OV --> FIND["/findings<br/>every issue, all machines"]
+    OV --> REP["/reports"]
+    OV --> COP["/copilot<br/>grounded chat"]
+
+    F1 & F2 & F3 --> A["/asset/:unit"]
+
+    A --> T1["Issues"]
+    A --> T2["Digital Twin — 3D"]
+    A --> T3["Sensors — live charts"]
+    A --> T4["Connections — graph"]
+    A --> T5["Reports"]
+    A --> T6["Check history"]
+    A --> RUN(["Check now → runs the analysis"])
+
+    classDef page fill:#EDE9FE,stroke:#7C3AED,color:#4C1D95
+    class OV,FIND,REP,COP,A page
+```
 
 ---
 
