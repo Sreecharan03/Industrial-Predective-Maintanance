@@ -62,7 +62,7 @@ export default function Reports() {
         </div>
       ) : (
         <Empty icon="description" title="No reports yet"
-          hint="Reports are produced with each analysis run." />
+          hint="A summary is saved each time the machine is checked." />
       )}
     </>
   );

@@ -33,7 +33,7 @@ export default function Fleet() {
         <Empty
           icon="precision_manufacturing"
           title="No assets analysed in this group yet"
-          hint="Run an analysis to populate it."
+          hint="Run a check to see results here."
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -50,8 +50,8 @@ export default function Fleet() {
 
                   <dl className="mt-4 grid grid-cols-3 gap-3">
                     {[
-                      { k: "Findings", v: a.findings.length, i: "fact_check" },
-                      { k: "Diagnoses", v: a.diagnoses, i: "clinical_notes" },
+                      { k: "Issues", v: a.findings.length, i: "fact_check" },
+                      { k: "Likely causes", v: a.diagnoses, i: "clinical_notes" },
                       { k: "Sensors", v: a.sensor_count, i: "sensors" },
                     ].map((s) => (
                       <div key={s.k} className="rounded-xl bg-canvas border border-line p-2.5">

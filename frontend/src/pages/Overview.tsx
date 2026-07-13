@@ -62,8 +62,8 @@ export default function Overview() {
           tone={critical ? "crit" : watch ? "warn" : "ok"}
           foot={<span>{critical} critical · {watch} watch</span>}
         />
-        <StatCard label="Diagnoses" value={diagnoses} icon="clinical_notes" tone="brand"
-          foot="Rule-derived, with confidence" />
+        <StatCard label="Likely causes" value={diagnoses} icon="clinical_notes" tone="brand"
+          foot="Worked out from the readings" />
       </div>
 
       {/* Fleet */}

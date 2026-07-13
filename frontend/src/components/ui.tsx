@@ -1,6 +1,7 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
 import type { Finding, Severity } from "../lib/api";
-import { ORIGIN, SEVERITY, prettySensor } from "../lib/ui";
+import { ORIGIN, SEVERITY, prettySensor, plainMeaning } from "../lib/ui";
 
 export function Icon({ name, className = "" }: { name: string; className?: string }) {
   return (
@@ -125,6 +126,9 @@ export function HealthRing({ score, size = 92 }: { score: number; size?: number 
 }
 
 export function FindingCard({ f, onCite }: { f: Finding; onCite?: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const plain = plainMeaning(f.finding_type);
+
   return (
     <article className="card card-hover p-4 animate-rise">
       <div className="flex items-start gap-3">
@@ -137,28 +141,46 @@ export function FindingCard({ f, onCite }: { f: Finding; onCite?: (id: string) =
               {prettySensor(f.target_key)}
             </span>
           </div>
-          <p className="mt-2 font-semibold text-[15px] leading-snug">{f.summary}</p>
-          <p className="mt-1 text-sm text-ink-soft leading-relaxed">{f.detail}</p>
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted">
+
+          {/* Plain English first — what this actually means. */}
+          <p className="mt-2 font-semibold text-[15px] leading-snug">
+            {plain ?? f.summary}
+          </p>
+
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted">
             <span className="inline-flex items-center gap-1">
               <Icon name="verified" className="text-[14px]" />
-              confidence <b className="num text-ink-soft">{(f.confidence.value * 100).toFixed(0)}%</b>
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <Icon name="function" className="text-[14px]" />
-              {f.source_engine}
+              <b className="num text-ink-soft">{(f.confidence.value * 100).toFixed(0)}%</b> sure
             </span>
             <button
-              onClick={() => onCite?.(f.finding_id)}
-              className="num inline-flex items-center gap-1 hover:text-brand-600 transition-colors"
-              title="Finding id — every claim in the Copilot cites one of these"
+              onClick={() => setOpen((o) => !o)}
+              className="inline-flex items-center gap-1 font-medium hover:text-brand-600 transition-colors"
             >
-              <Icon name="tag" className="text-[14px]" />
-              {f.finding_id.slice(0, 10)}
+              <Icon name={open ? "expand_less" : "expand_more"} className="text-[15px]" />
+              {open ? "Hide details" : "Details"}
             </button>
           </div>
+
+          {open && (
+            <div className="mt-3 rounded-xl bg-canvas border border-line p-3 space-y-2">
+              <p className="text-sm font-medium leading-snug">{f.summary}</p>
+              <p className="text-sm text-ink-soft leading-relaxed">{f.detail}</p>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[11px] text-ink-3">
+                <span>checked by {f.source_engine}</span>
+                <button
+                  onClick={() => onCite?.(f.finding_id)}
+                  className="num inline-flex items-center gap-1 hover:text-brand-600 transition-colors"
+                  title="Reference id"
+                >
+                  <Icon name="tag" className="text-[13px]" />
+                  {f.finding_id.slice(0, 10)}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </article>
   );
 }
+

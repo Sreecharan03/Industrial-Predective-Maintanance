@@ -4,18 +4,20 @@ import {
   api, type Asset, type EngineRun, type Finding, type Report, type Telemetry,
 } from "../lib/api";
 import { SensorChart, isBreaching } from "../components/SensorChart";
+import DigitalTwinPanel from "../components/twin/DigitalTwinPanel";
 import { CLASSES, SEVERITY, healthScore, prettySensor, worst } from "../lib/ui";
 import {
   Empty, FindingCard, HealthRing, Icon, Spinner, StatCard, StatusPill,
 } from "../components/ui";
 
-type Tab = "findings" | "sensors" | "graph" | "reports" | "runs";
+type Tab = "findings" | "twin" | "sensors" | "graph" | "reports" | "runs";
 const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: "findings", label: "Findings", icon: "fact_check" },
+  { id: "findings", label: "Issues", icon: "fact_check" },
+  { id: "twin", label: "Digital Twin", icon: "view_in_ar" },
   { id: "sensors", label: "Sensors", icon: "sensors" },
-  { id: "graph", label: "Knowledge Graph", icon: "graph_3" },
+  { id: "graph", label: "Connections", icon: "graph_3" },
   { id: "reports", label: "Reports", icon: "description" },
-  { id: "runs", label: "Runs", icon: "history" },
+  { id: "runs", label: "Check history", icon: "history" },
 ];
 
 export default function AssetDetail() {
@@ -51,7 +53,7 @@ export default function AssetDetail() {
   // readings are an explicit request, never a default), and refreshed on the
   // simulator's 30s cadence so the chart tracks the live feed.
   useEffect(() => {
-    if (tab !== "sensors" || !unit) return;
+    if ((tab !== "sensors" && tab !== "twin") || !unit) return;
     let alive = true;
     const pull = () =>
       api.telemetry(unit, hours).then((t) => { if (alive) setTelemetry(t); }).catch(() => {});
@@ -65,7 +67,7 @@ export default function AssetDetail() {
     try {
       const res = await api.analyze(unit);
       setNote(res.replayed
-        ? "No new data — the existing analysis is already current."
+        ? "No new readings since the last check."
         : `Analysis complete · ${res.finding_count} findings persisted.`);
       await load();
     } catch (e) {
@@ -79,7 +81,7 @@ export default function AssetDetail() {
   if (!asset)
     return (
       <Empty icon="search_off" title={`${unit} not analysed yet`}
-        hint="Run an analysis to populate this asset." />
+        hint="Run a check to see results for this machine." />
     );
 
   const meta = CLASSES[asset.equipment_class];
@@ -107,7 +109,7 @@ export default function AssetDetail() {
           <div className="flex flex-col items-stretch gap-2">
             <button className="btn-primary" onClick={analyse} disabled={busy}>
               <Icon name={busy ? "hourglass_top" : "play_arrow"} className="text-[18px]" />
-              {busy ? "Analysing…" : "Run analysis"}
+              {busy ? "Analysing…" : "Check now"}
             </button>
             <Link to={`/copilot?unit=${encodeURIComponent(unit)}`} className="btn-quiet">
               <Icon name="auto_awesome" className="text-[16px]" /> Ask Copilot
@@ -123,14 +125,14 @@ export default function AssetDetail() {
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Findings" value={findings.length} icon="fact_check" />
-        <StatCard label="Diagnoses" value={findings.filter((f) => f.origin === "diagnosed").length}
-          icon="clinical_notes" tone="brand" foot="Rule-derived" />
-        <StatCard label="Watch / Critical"
+        <StatCard label="Issues found" value={findings.length} icon="fact_check" />
+        <StatCard label="Likely causes" value={findings.filter((f) => f.origin === "diagnosed").length}
+          icon="clinical_notes" tone="brand" foot="Worked out from readings" />
+        <StatCard label="Needs attention"
           value={sevs.filter((s) => s === "warning" || s === "critical").length}
           icon="warning"
           tone={sevs.includes("critical") ? "crit" : sevs.includes("warning") ? "warn" : "ok"} />
-        <StatCard label="Graph nodes" value={graph?.nodes.length ?? 0} icon="graph_3" tone="info"
+        <StatCard label="Connections" value={graph?.nodes.length ?? 0} icon="graph_3" tone="info"
           foot={`${graph?.edges.length ?? 0} relationships`} />
       </div>
 
@@ -159,8 +161,8 @@ export default function AssetDetail() {
                     ? "bg-brand-600 text-white ring-brand-600"
                     : "bg-card text-ink-soft ring-line hover:bg-canvas"
                 }`}>
-                {k === "derived" ? "Facts" : k === "diagnosed" ? "Diagnoses"
-                  : k === "learned" ? "Hypotheses" : "All"}
+                {k === "derived" ? "Facts" : k === "diagnosed" ? "Likely causes"
+                  : k === "learned" ? "Early signals" : "All"}
               </button>
             ))}
           </div>
@@ -174,12 +176,16 @@ export default function AssetDetail() {
         </section>
       )}
 
+      {tab === "twin" && (
+        <DigitalTwinPanel asset={asset} findings={findings} telemetry={telemetry} />
+      )}
+
       {tab === "sensors" && (
         <section className="space-y-4 animate-rise">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm text-ink-soft">
-              Live readings, sampled every 30&nbsp;s. The shaded band is the supplied
-              operating range — telemetry is shown here only, never used for reasoning.
+              Live readings, updating every 30&nbsp;seconds. The shaded band shows the
+              normal operating range for each sensor.
             </p>
             <div className="flex gap-1 rounded-xl bg-canvas border border-line p-1">
               {[1, 6, 24].map((h) => (
@@ -240,8 +246,8 @@ export default function AssetDetail() {
 
                           <p className="mt-1 num text-[11px] text-ink-3">
                             {t.threshold
-                              ? `limit ${t.threshold.low ?? "−∞"} – ${t.threshold.high ?? "∞"} ${t.unit_symbol}`
-                              : "no supplied limit"}
+                              ? `normal range ${t.threshold.low ?? "any"} – ${t.threshold.high ?? "any"} ${t.unit_symbol}`
+                              : "no range set for this sensor"}
                           </p>
                         </div>
                       );
@@ -320,7 +326,7 @@ export default function AssetDetail() {
             <table className="w-full text-sm">
               <thead className="bg-canvas border-b border-line">
                 <tr className="text-left">
-                  {["Run", "Status", "Findings", "Artifacts", "Input hash"].map((h) => (
+                  {["Run", "Status", "Issues found", "Files", "Input hash"].map((h) => (
                     <th key={h} className="eyebrow px-4 py-2.5">{h}</th>
                   ))}
                 </tr>

@@ -9,7 +9,7 @@ const NAV = [
   ...Object.values(CLASSES).map((c) => ({
     to: `/fleet/${c.slug}`, icon: c.icon, label: c.label,
   })),
-  { to: "/findings", icon: "fact_check", label: "Findings" },
+  { to: "/findings", icon: "fact_check", label: "Issues" },
   { to: "/reports", icon: "description", label: "Reports" },
   { to: "/copilot", icon: "auto_awesome", label: "Copilot" },
 ];
@@ -110,7 +110,7 @@ export default function Layout() {
           <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold
                            text-ok bg-ok-soft ring-1 ring-ok-ring rounded-full px-2.5 py-1">
             <span className="h-1.5 w-1.5 rounded-full bg-ok" />
-            Grounded · every claim cited
+            Answers come only from real readings
           </span>
         </header>
 

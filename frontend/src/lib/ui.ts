@@ -30,18 +30,18 @@ export const SEVERITY: Record<
 
 export const ORIGIN: Record<Origin, { label: string; hint: string; pill: string }> = {
   derived: {
-    label: "Fact",
-    hint: "Deterministic — measured and computed.",
+    label: "Measured",
+    hint: "Taken straight from the sensor readings.",
     pill: "bg-brand-50 text-brand-700 ring-brand-200",
   },
   diagnosed: {
-    label: "Diagnosis",
-    hint: "Rule-derived, carries rule confidence.",
+    label: "Likely cause",
+    hint: "Worked out from the readings.",
     pill: "bg-[#E7F6F4] text-[#0B7A6E] ring-[#B7E4DE]",
   },
   learned: {
-    label: "Hypothesis",
-    hint: "Learned / forecast — advisory, unconfirmed.",
+    label: "Early signal",
+    hint: "A pattern worth watching — not confirmed.",
     pill: "bg-[#FBEAFE] text-[#9A1FAB] ring-[#F0C4F7]",
   },
 };
@@ -89,3 +89,36 @@ export function healthScore(severities: Severity[]): number {
 export function prettySensor(key: string): string {
   return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+
+/** What each finding actually MEANS, in plain English. The engines speak
+ *  precisely; operators should not have to. */
+export const PLAIN: Record<string, string> = {
+  threshold_misspecified:
+    "The limit set for this sensor doesn't match how the machine actually runs. The limit probably needs reviewing — this is not a fault.",
+  threshold_config_review_recommended:
+    "Worth reviewing this limit — it doesn't reflect how the machine normally operates.",
+  threshold_critical:
+    "A reading has gone past a safety limit. This needs attention now.",
+  health_degraded:
+    "Overall condition is below normal for this machine.",
+  reliability_drift:
+    "This sensor's readings have slowly shifted over time. It may need calibration.",
+  reliability_flatline:
+    "This sensor has been stuck on the same value — it may not be reporting properly.",
+  sensor_untrustworthy:
+    "This sensor's readings can't be fully trusted right now.",
+  critical_on_untrustworthy_sensor:
+    "A critical reading came from a sensor we don't fully trust — check it before acting.",
+  condenser_fouling_suspected:
+    "The condenser may be dirty or blocked.",
+  novelty_elevated:
+    "The machine is behaving unlike its usual pattern. An early signal, not confirmed.",
+  operating_regime_discovered:
+    "A distinct running mode was spotted in the data.",
+  forecast_threshold_approach:
+    "If the current trend continues, this reading could reach its limit soon. Advisory only.",
+};
+
+export const plainMeaning = (findingType: string): string | null =>
+  PLAIN[findingType] ?? null;

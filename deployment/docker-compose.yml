@@ -55,7 +55,7 @@ services:
     ports: ["8000:8000"]
     volumes:
       - ${SM_DATA:-../../senseminds-data}/artifacts:/data/artifacts
-      - ../../Datasets:/data/datasets:ro
+      - ${SM_DATASETS:-../../Datasets}:/data/datasets:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/ready"]
       interval: 10s
@@ -79,7 +79,7 @@ services:
       migrate: { condition: service_completed_successfully }
     volumes:
       - ${SM_DATA:-../../senseminds-data}/artifacts:/data/artifacts
-      - ../../Datasets:/data/datasets:ro
+      - ${SM_DATASETS:-../../Datasets}:/data/datasets:ro
     networks: [smnet]
 
   # Live machine simulator — generates 30-second data for all 6 machines, tails it
@@ -102,7 +102,7 @@ services:
       migrate: { condition: service_completed_successfully }
     volumes:
       - ${SM_DATA:-../../senseminds-data}/artifacts:/data/artifacts
-      - ../../Datasets:/data/datasets:ro
+      - ${SM_DATASETS:-../../Datasets}:/data/datasets:ro
       - ${SM_DATA:-../../senseminds-data}/live:/data/live
     networks: [smnet]
 

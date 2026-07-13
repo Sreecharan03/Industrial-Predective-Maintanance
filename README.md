@@ -81,7 +81,9 @@ Design is captured in **19 Architecture Decision Records** under
 | **Ingestion worker** (idempotent analysis cycles) | Batch cycles work; live streaming deferred | **85%** |
 | **Docker / deployment** (compose stack) | Runs end-to-end; needs dep pinning + hardening | **90%** |
 | **Monitoring / logging** (JSON logs, `/metrics`, `/ready`) | Basic done; no OpenTelemetry tracing yet | **60%** |
-| **Dashboard** (React SPA — overview, fleets, asset detail, findings, reports, Copilot) | Built, runs in the stack | **90%** |
+| **Dashboard** (React SPA — overview, fleets, asset detail, findings, reports, Copilot) | Built, runs in the stack | **95%** |
+| **Digital Twin** (3D machine view, live sensor hotspots) | Built for all 6 machines | **90%** |
+| **Live ingestion** (30s simulator + REST push endpoint) | Working; OPC-UA/MQTT adapter still to come | **80%** |
 | **Phase C — supervised learning** | Deferred (needs labeled maintenance events) | **0%** |
 | **Testing** | 226 tests (unit + parity + integration) | **90%** |
 
@@ -104,13 +106,44 @@ deutan / tritan simulation).
   `#15803D` healthy · `#57534E` info · `#B45309` watch · `#BE123C` critical
 
 Pages: **Overview** (plant health, fleet, what needs a look) · **Refrigeration /
-Air Compressors / Nitrogen Plant** fleets · **Asset detail** (findings, sensors,
-knowledge graph, reports, run history, one-click analysis) · **Findings** ·
+Air Compressors / Nitrogen Plant** fleets · **Asset detail** · **Findings** ·
 **Reports** · **Plant Copilot** (grounded chat — every claim shows its cited
 finding ids, and gaps appear as *insufficient evidence*).
 
+Findings are written in **plain English** ("The limit set for this sensor doesn't
+match how the machine actually runs — this is not a fault"), with the precise
+engineering wording one click away.
+
+**Asset detail** carries three views of the same machine:
+
+| Tab | What it shows |
+|---|---|
+| **Digital Twin** | A rotatable 3D view of the machine, assembled from its *real* subsystems. Every sensor is a hotspot at its physical location, coloured by state and glowing/pulsing when in alarm. Three separate blocks: the machine · overall state · sensor readings. |
+| **Sensors** | Live value + trend chart per sensor, with the normal operating range shaded. Refreshes on the 30s cadence. |
+| **Connections** | The knowledge graph for that asset. |
+
+The twin is generated geometry (bevelled machined parts, bolted flanges, gauges,
+guards, dished pressure vessels, reflective metal) — **a representative view of the
+equipment, not a CAD model of the physical unit**, and it says so on screen.
+three.js is lazy-loaded, so it costs nothing on any other page.
+
 It shows only what the platform actually computes — **no invented failure
 probability or RUL**, because the backend does not produce them yet.
+
+### Live data
+
+Two ways to feed the platform:
+
+1. **`POST /api/v1/readings`** — the production path. Any edge gateway, historian
+   export or OPC-UA/MQTT bridge posts readings; they go through the same
+   validation and sink a CSV bootstrap uses, so nothing downstream knows the
+   difference.
+2. **Simulator** (`--profile sim`) — generates realistic **30-second** data for all
+   6 machines from their real statistical profiles, appends to a growing CSV, tails
+   it just after each tick, ingests and re-analyses. It also ramps SC-126's
+   discharge pressure past its **280 bar protection setpoint**, so you can watch the
+   platform detect a genuine fault end-to-end: `THRESHOLD_CRITICAL` → health cascade
+   → dashboard turns red → Copilot explains it, with citations.
 
 ### Test suite
 - **226 passing** with a database (unit + parity + integration).
@@ -138,41 +171,153 @@ The platform is honest — it does **not** invent problems:
 
 ---
 
-## Run it
+## Run it locally
 
 ```bash
 cd deployment
-cp .env.example .env          # set POSTGRES_PASSWORD, JWT secret, admin password
-                              # optional: SENSEMINDS_GROQ_API_KEY (empty => offline stub)
-docker compose up --build     # postgres+timescale, migrate, api, worker, dashboard
+cp .env.example .env          # set passwords/secrets; leave SM_DATA/SM_DATASETS as-is locally
+docker compose up -d --build  # postgres+timescale, migrate, api, dashboard
+
+# feed it data — pick ONE:
+docker compose --profile batch up -d worker      # real historical CSVs
+docker compose --profile sim   up -d simulator   # live 30-second simulated feed
 ```
 
 * **Dashboard → http://localhost:3000** (sign in with the admin credentials from `.env`)
-* API → http://localhost:8000
+* API → http://localhost:8000 · docs at `/docs` · health at `/health`
 
-Then:
+> **All state lives in `$SM_DATA`** (database, artifacts, live CSVs) as bind mounts —
+> *not* Docker named volumes. Named volumes sit on ephemeral disk and are lost when the
+> host is recycled; this survives.
+
+---
+
+## Deploying to GCP (or any VM)
+
+The whole platform is one Docker Compose stack, so a single VM is all you need.
+
+### 1. Create the VM
 
 ```bash
-# health
-curl localhost:8000/health
-
-# login (default admin/admin — change in .env)
-TOKEN=$(curl -s -X POST localhost:8000/api/v1/auth/token \
-  -d "username=admin&password=admin" | jq -r .access_token)
-
-# run analysis + read results
-curl -X POST localhost:8000/api/v1/analyze -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" -d '{"unit":"SC-126"}'
-curl localhost:8000/api/v1/assets/SC-126/findings -H "Authorization: Bearer $TOKEN"
-
-# ask the grounded LLM
-curl -X POST localhost:8000/api/v1/llm/query -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"unit":"SC-126","question":"Is SC-126 healthy?","persona":"plant_manager"}'
+gcloud compute instances create senseminds \
+  --machine-type=e2-standard-4 \           # 4 vCPU / 16 GB — analysis is CPU-bound
+  --image-family=ubuntu-2404-lts --image-project=ubuntu-os-cloud \
+  --boot-disk-size=100GB --boot-disk-type=pd-balanced \
+  --tags=senseminds
 ```
 
-The `worker` service auto-loads the six machines from `Datasets/` on first start
-and keeps the analysis current on an interval.
+Open the port (do this **only** if you are not putting a proxy in front):
+
+```bash
+gcloud compute firewall-rules create senseminds-web \
+  --allow=tcp:80,tcp:443 --target-tags=senseminds
+```
+
+### 2. Install Docker
+
+```bash
+gcloud compute ssh senseminds
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER && exit      # log back in for the group to apply
+```
+
+### 3. Get the code and the machine data
+
+```bash
+sudo mkdir -p /opt && cd /opt
+git clone https://github.com/Sreecharan03/Industrial-Predective-Maintanance.git senseminds
+sudo mkdir -p /opt/senseminds-data /opt/senseminds-datasets
+sudo chown -R $USER /opt/senseminds*
+```
+
+The repo does **not** contain the sensor data. Copy the processed CSVs up (~31 MB —
+only `Datasets/processed/*.csv` is needed):
+
+```bash
+# from your machine
+gcloud compute scp Datasets/processed/*.csv senseminds:/opt/senseminds-datasets/processed/
+```
+
+### 4. Configure
+
+```bash
+cd /opt/senseminds/deployment
+cp .env.example .env
+nano .env
+```
+
+Set at minimum:
+
+```env
+SM_DATA=/opt/senseminds-data              # persistent disk — DB lives here
+SM_DATASETS=/opt/senseminds-datasets      # the processed CSVs
+
+POSTGRES_PASSWORD=<long random>
+SENSEMINDS_JWT_SECRET=<64+ random chars>   # openssl rand -hex 32
+SENSEMINDS_DEFAULT_ADMIN_PASSWORD=<strong>
+SENSEMINDS_GROQ_API_KEY=<your groq key>    # empty ⇒ offline stub, still works
+```
+
+> ⚠️ The admin user is seeded **once**, on the first start against an empty database.
+> Set the password *before* you bring the stack up.
+
+### 5. Launch
+
+```bash
+docker compose up -d --build
+docker compose --profile sim up -d simulator     # or --profile batch up -d worker
+docker compose ps
+curl localhost:8000/health
+```
+
+Everything has `restart: unless-stopped`, so the stack comes back by itself after a
+VM reboot.
+
+### 6. Put TLS in front (recommended)
+
+Don't expose 3000/8000 directly. Point a domain at the VM and terminate TLS with Caddy:
+
+```bash
+# /opt/senseminds/deployment/Caddyfile
+senseminds.example.com {
+    reverse_proxy dashboard:80
+}
+```
+
+```bash
+docker run -d --name caddy --restart unless-stopped \
+  --network deployment_smnet -p 80:80 -p 443:443 \
+  -v /opt/senseminds/deployment/Caddyfile:/etc/caddy/Caddyfile \
+  -v /opt/senseminds-data/caddy:/data caddy
+```
+
+Caddy fetches and renews the certificate automatically. Then remove the
+`ports:` mappings for `api` and `dashboard` so only Caddy is public.
+
+### 7. Back it up
+
+Everything that matters is in Postgres:
+
+```bash
+docker compose exec -T postgres pg_dump -U senseminds senseminds | gzip \
+  > /opt/backups/senseminds-$(date +%F).sql.gz
+```
+
+Put that in a cron job and push to a GCS bucket. `$SM_DATA/live` (the CSVs) is a
+second recovery source — ingestion is watermark-driven, so restoring the CSVs and
+restarting re-ingests anything the database is missing.
+
+### Sizing notes
+* **e2-standard-4** comfortably runs 6 machines with the 30-second feed.
+* The analysis is **CPU-bound** (pandas); scale vCPU before RAM.
+* 100 GB disk holds years of 30-second history for 6 machines (TimescaleDB
+  compresses chunks older than 30 days).
+
+### Later, if you outgrow one VM
+* Swap the `postgres` service for **Cloud SQL** (change `SENSEMINDS_DATABASE_URL` — nothing else).
+* Run `api` on **Cloud Run**, keep the `worker`/`simulator` on a VM.
+* The three schemas (`sensor_history`, `knowledge`, `application`) were built to be
+  separable into independent databases without touching application code.
 
 ---
 
@@ -197,7 +342,10 @@ senseminds/
 │                      artifact store, logging
 ├── api/               FastAPI app, routers, JWT auth, request logging
 └── workers/           continuous analysis worker
+├── simulation/        live 30s machine simulator (testing / demo)
+├── workers/           continuous analysis worker
 frontend/              React + Vite + Tailwind dashboard (validated light palette)
+  └── src/components/twin/   3D digital twin (three.js, lazy-loaded)
 deployment/            Dockerfile, docker-compose.yml, .env.example
 docs/architecture/     ADR-001 … ADR-019
 tests/                 226 tests (unit + parity + integration)

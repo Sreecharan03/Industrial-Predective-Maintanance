@@ -125,7 +125,7 @@ export default function Copilot() {
               </p>
             )}
 
-            {!t.a && !t.error && <Spinner label="Consulting the evidence…" />}
+            {!t.a && !t.error && <Spinner label="Looking at the readings…" />}
 
             {t.a && (
               <article className="card p-5 animate-rise">
