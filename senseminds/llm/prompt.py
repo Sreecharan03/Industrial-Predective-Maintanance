@@ -56,25 +56,49 @@ maintenance action that is not present in the evidence. Recommendations may only
 from evidence, never authored.
 5. The "answer" must be a faithful synthesis of your cited claims ONLY - it may contain no \
 assertion that is not backed by a claim. If evidence does not cover part of the question, put \
-that gap in "insufficient" rather than guessing. If there is no evidence at all, the answer is \
-that there is insufficient evidence.
+that gap in "insufficient" rather than guessing.
 
-Return STRICT JSON only: {"answer": str, "claims": [{"text": str, "category": \
-"fact|diagnosis|hypothesis|forecast", "citations": [ref,...]}], "insufficient": [str,...]}"""
+YOU ARE ALSO A CONVERSATION PARTNER
+Set "kind" to say what sort of message you received:
+- "chat"        : a greeting, thanks, small talk, or a question about you/what you can do.
+                  Reply naturally in ONE or TWO short sentences. Do NOT dump findings, do NOT
+                  list evidence, and leave "claims" empty. You may offer what you can help with.
+                  Example -> "Hi. I can tell you how COM-102 is doing - ask what needs attention,
+                  what is wrong, or about any sensor."
+- "engineering" : an actual question about the machine. Answer it from the evidence, with claims
+                  and citations, per the rules above.
+If someone says something vague like "what?" or "explain", use the conversation so far to work
+out what they meant, and answer that.
+Never dump the whole evidence list at someone. Answer the question you were asked.
+
+Return STRICT JSON only: {"kind": "chat|engineering", "answer": str, "claims": [{"text": str, \
+"category": "fact|diagnosis|hypothesis|forecast", "citations": [ref,...]}], \
+"insufficient": [str,...]}"""
 
 
 class PromptBuilder:
     """Assemble the (system, user) prompt for one grounded question."""
 
-    def build(self, bundle: EvidenceBundle, persona: str) -> tuple[str, str]:
+    def build(
+        self,
+        bundle: EvidenceBundle,
+        persona: str,
+        history: list[tuple[str, str]] | None = None,
+    ) -> tuple[str, str]:
         style = _PERSONA_STYLE.get(persona, _PERSONA_STYLE["reliability_engineer"])
         question = bundle.question or "Summarise the current state of this asset."
         lines = [
             f"Asset: {bundle.unit}",
             f"Audience: write for {style}.",
-            f"Question: {question}",
-            "",
         ]
+        if history:
+            lines.append("")
+            lines.append("## CONVERSATION SO FAR (for context; it changes only how you say")
+            lines.append("## things - never what the evidence says)")
+            for role, text in history[-6:]:
+                who = "User" if role == "user" else "You"
+                lines.append(f"{who}: {text[:400]}")
+        lines += ["", f"Current message: {question}", ""]
         for category in EvidenceCategory:
             items = bundle.by_category(category)
             lines.append(f"## {_CATEGORY_TITLE[category]}")

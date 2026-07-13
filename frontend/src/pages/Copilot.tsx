@@ -36,6 +36,7 @@ export default function Copilot() {
   const [q, setQ] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
+  const [offline, setOffline] = useState(false);
   const end = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -49,7 +50,17 @@ export default function Copilot() {
     setBusy(true);
     setTurns((t) => [...t, { q: question, a: null }]);
     try {
-      const a = await api.ask(unit, question, persona);
+      // Send the conversation so far, so follow-ups like "what do you mean?" work.
+      // Evidence is still re-retrieved fresh each turn — memory only shapes wording.
+      const history = turns
+        .filter((t) => t.a)
+        .flatMap((t) => [
+          { role: "user" as const, content: t.q },
+          { role: "assistant" as const, content: t.a!.answer },
+        ])
+        .slice(-6);
+      const a = await api.ask(unit, question, persona, history);
+      setOffline(a.model === "stub");
       setTurns((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a } : x)));
     } catch (e) {
       setTurns((t) =>
@@ -70,6 +81,20 @@ export default function Copilot() {
           <b className="text-ink">insufficient evidence</b>.
         </p>
       </header>
+
+      {offline && (
+        <div className="card mt-4 flex items-start gap-3 border-warn-ring bg-warn-soft p-4">
+          <Icon name="cloud_off" className="mt-0.5 text-warn" />
+          <div className="text-sm">
+            <p className="font-semibold text-warn">Copilot is in offline mode</p>
+            <p className="mt-0.5 text-ink-soft">
+              No language model is configured, so it can only list the evidence rather than
+              hold a conversation. Set <code className="num">SENSEMINDS_GROQ_API_KEY</code> and
+              restart the API.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-2">

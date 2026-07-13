@@ -32,15 +32,26 @@ class LlmQueryService:
         self._prompt = prompt_builder or PromptBuilder()
         self._validator = validator or CitationValidator()
 
+    @property
+    def model_name(self) -> str:
+        return self._model.name
+
     def answer(
-        self, unit: str, question: str = "", persona: str = _DEFAULT_PERSONA
+        self,
+        unit: str,
+        question: str = "",
+        persona: str = _DEFAULT_PERSONA,
+        history: list[tuple[str, str]] | None = None,
     ) -> GroundedAnswer:
         bundle = self._retriever.retrieve(unit, question)
-        return self.answer_bundle(bundle, persona)
+        return self.answer_bundle(bundle, persona, history)
 
     def answer_bundle(
-        self, bundle: EvidenceBundle, persona: str = _DEFAULT_PERSONA
+        self,
+        bundle: EvidenceBundle,
+        persona: str = _DEFAULT_PERSONA,
+        history: list[tuple[str, str]] | None = None,
     ) -> GroundedAnswer:
-        system, user = self._prompt.build(bundle, persona)
+        system, user = self._prompt.build(bundle, persona, history)
         raw = self._model.complete(system, user)
         return self._validator.validate(raw, bundle, persona)

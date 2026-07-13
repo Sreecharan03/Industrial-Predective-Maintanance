@@ -40,8 +40,21 @@ class CitationValidator:
                 claims.append(claim)
 
         insufficient = tuple(str(x) for x in (parsed.get("insufficient") or []))
+        kind = str(parsed.get("kind") or "engineering").lower()
+
+        if kind == "chat" and not claims:
+            # A greeting or a question about the assistant itself. There is nothing to
+            # cite and nothing to fabricate — reply plainly, with no claims.
+            answer = str(parsed.get("answer") or "").strip()
+            return GroundedAnswer(
+                unit=bundle.unit, persona=persona,
+                answer=answer or "How can I help with this machine?",
+                claims=(), insufficient=(), citations=(),
+            )
+
         if not claims:
-            # Nothing grounded survived -> never emit the model's free text.
+            # An engineering question with nothing grounded behind it -> never emit
+            # the model's free text.
             return self._insufficient(bundle, persona,
                                       list(insufficient) or ["No supported claims."])
 

@@ -137,6 +137,8 @@ export interface GroundedClaim {
   citations: string[];
 }
 
+export interface Turn { role: "user" | "assistant"; content: string }
+
 export interface GroundedAnswer {
   unit: string;
   persona: string;
@@ -180,9 +182,9 @@ export const api = {
       { method: "POST", body: JSON.stringify({ unit }) },
     ),
 
-  ask: (unit: string, question: string, persona: string) =>
-    req<GroundedAnswer>("/llm/query", {
+  ask: (unit: string, question: string, persona: string, history: Turn[] = []) =>
+    req<GroundedAnswer & { model?: string }>("/llm/query", {
       method: "POST",
-      body: JSON.stringify({ unit, question, persona }),
+      body: JSON.stringify({ unit, question, persona, history }),
     }),
 };
