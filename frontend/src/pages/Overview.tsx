@@ -29,6 +29,18 @@ export default function Overview() {
     .sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "critical" ? -1 : 1))
     .slice(0, 4);
 
+  // Which machines are actually in trouble — named, so the summary can never be
+  // vaguer (or more reassuring) than the truth.
+  const bad = assets.filter((a) => a.findings.some((f) => f.severity === "critical"));
+  const headline =
+    critical > 0
+      ? "Something needs attention now"
+      : watch > 0
+        ? "A few things are worth a look"
+        : "The plant is running steadily";
+  const tone =
+    critical > 0 ? "text-crit" : watch > 0 ? "text-warn" : "text-ok";
+
   return (
     <>
       {/* Hero */}
@@ -38,16 +50,25 @@ export default function Overview() {
           <HealthRing score={plantHealth} size={104} />
           <div className="flex-1 min-w-0">
             <p className="eyebrow">Central Dashboard</p>
-            <h1 className="mt-1 text-2xl lg:text-3xl font-extrabold tracking-tight">
-              Plant health is{" "}
-              <span className={plantHealth >= 85 ? "text-ok" : plantHealth >= 60 ? "text-warn" : "text-crit"}>
-                {plantHealth >= 85 ? "steady" : plantHealth >= 60 ? "worth a look" : "needs attention"}
-              </span>
+            <h1 className={`mt-1 text-2xl lg:text-3xl font-extrabold tracking-tight ${tone}`}>
+              {headline}
             </h1>
             <p className="mt-1.5 text-sm text-ink-soft max-w-2xl leading-relaxed">
-              {all.length} findings across {assets.length} assets — all deterministic or
-              rule-derived, none invented. Threshold findings mean a{" "}
-              <b className="text-ink">limit is mis-set</b>, not that a machine is failing.
+              {critical > 0 ? (
+                <>
+                  <b className="text-ink">
+                    {bad.map((a) => a.unit).join(", ")}
+                  </b>{" "}
+                  {bad.length === 1 ? "has a reading" : "have readings"} past a safe limit.{" "}
+                  {all.length} issues across {assets.length} machines in total.
+                </>
+              ) : (
+                <>
+                  {all.length} issues across {assets.length} machines — and{" "}
+                  <b className="text-ink">nothing is failing</b>. Most are limits that
+                  don't match how the machines actually run, and are worth reviewing.
+                </>
+              )}
             </p>
           </div>
         </div>

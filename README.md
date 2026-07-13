@@ -145,6 +145,37 @@ Two ways to feed the platform:
    platform detect a genuine fault end-to-end: `THRESHOLD_CRITICAL` → health cascade
    → dashboard turns red → Copilot explains it, with citations.
 
+### Plant Copilot
+
+A real assistant, not a search box — but one that **cannot make things up**.
+
+- **Grounded**: every engineering statement must cite a `finding_id` from the retrieved
+  evidence. Uncited claims are mechanically **dropped** by a validator; the model is not
+  trusted to police itself.
+- **Conversational**: it classifies each message as *chat* or *engineering*. A greeting
+  gets a one-line reply with **zero claims** (no evidence dump); a real question gets a
+  grounded, cited answer.
+- **Remembers**: recent turns are sent with each message, so follow-ups like *"what do you
+  mean?"* resolve. Memory shapes **only the wording** — evidence is re-retrieved fresh every
+  turn, so history can never change what is true (ADR-018 §7).
+- **Honest about gaps**: if the evidence doesn't cover the question, it says
+  *insufficient evidence* rather than guessing.
+
+Set `SENSEMINDS_GROQ_API_KEY` to enable it. **Without a key it falls back to a
+deterministic stub** — which exists to run the grounding tests offline, not to hold a
+conversation — and the UI shows an explicit **"offline mode"** banner rather than
+pretending.
+
+### Written for operators, not architects
+
+The UI speaks plain English. A finding reads *"The limit set for this sensor doesn't match
+how the machine actually runs. The limit probably needs reviewing — this is not a fault."*
+The precise engineering wording is one click away under **Details**.
+
+The dashboard is also careful not to over-reassure: the "mis-set limits are not faults"
+nuance (true for 5 of the 6 machines) is **suppressed the moment any machine is genuinely
+in alarm**, and the offending machine is named instead.
+
 ### Test suite
 - **226 passing** with a database (unit + parity + integration).
 - **195 passing / 31 skipped** offline (integration tests skip gracefully with no DB).
