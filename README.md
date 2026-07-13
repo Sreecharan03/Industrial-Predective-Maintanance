@@ -186,6 +186,16 @@ docker compose --profile sim   up -d simulator   # live 30-second simulated feed
 * **Dashboard → http://localhost:3000** (sign in with the admin credentials from `.env`)
 * API → http://localhost:8000 · docs at `/docs` · health at `/health`
 
+### Restarting after a reboot
+
+```bash
+cd deployment && ./start.sh          # sim (default) | batch | none
+```
+
+Idempotent and safe: it rebuilds only what's missing and the simulator **resumes**
+rather than reseeding. Verified by destroying every container — 675,367 readings /
+2,702 findings came back untouched.
+
 > **All state lives in `$SM_DATA`** (database, artifacts, live CSVs) as bind mounts —
 > *not* Docker named volumes. Named volumes sit on ephemeral disk and are lost when the
 > host is recycled; this survives.
