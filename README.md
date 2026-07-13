@@ -221,8 +221,8 @@ flowchart LR
 | **Rule Engine** (diagnoses, auditable reasoning) | Complete | **100%** 🔒 |
 | **Persistence** (TimescaleDB + repos + UnitOfWork) | Complete, byte-parity proven | **100%** 🔒 |
 | **Analysis orchestration** (atomic, idempotent, concurrent-safe) | Complete | **100%** 🔒 |
-| **Pattern Learning** (unsupervised novelty / regimes) | Implemented; not yet wired into live pipeline | **90%** |
-| **Forecasting** (short-horizon, backtested) | Implemented; not yet wired into live pipeline | **90%** |
+| **Pattern Learning** (unsupervised novelty / regimes) | **Live in the pipeline** (own slower cadence) | **100%** |
+| **Forecasting** (short-horizon, backtested) | **Live in the pipeline** (own slower cadence) | **100%** |
 | **LLM communication layer** (ADR-018, grounded + cited) | Complete; live Groq validated | **100%** |
 | **REST API** (assets/findings/diagnoses/reports/graph/analyze/llm) | Core complete | **90%** |
 | **Auth** (JWT + roles + seed) | Working; no OIDC/refresh/user-mgmt UI | **80%** |
@@ -324,8 +324,25 @@ The dashboard is also careful not to over-reassure: the "mis-set limits are not 
 nuance (true for 5 of the 6 machines) is **suppressed the moment any machine is genuinely
 in alarm**, and the offending machine is named instead.
 
+### Recording only what changed
+
+Findings are append-only and `finding_id = hash(identity, input_hash)`, so a naive
+30-second pipeline re-records every condition on every tick. Left alone this wrote
+**~2,500 finding rows an hour for 25 conditions that had not changed**, and made each
+knowledge-graph condition node accumulate an unbounded list of finding ids.
+
+The application now decides what counts as a **material change** — a new condition, a
+change in severity or wording, or a meaningful move in confidence or the evidence
+values. Engine prose embeds its numbers ("health is reduced (86.8)"), so the *wording*
+is compared and the *values* carry the tolerance. Result: the four steady machines now
+write **nothing at all**; only genuinely changing ones do.
+
+Because unchanged findings are no longer re-appended, each run records the set of
+conditions it **observed** — so a condition that clears simply drops out of "current"
+instead of looking permanent.
+
 ### Test suite
-- **226 passing** with a database (unit + parity + integration).
+- **233 passing** with a database (unit + parity + integration).
 - **195 passing / 31 skipped** offline (integration tests skip gracefully with no DB).
 - `ruff` clean. Deterministic engine outputs are **byte-identical** whether data
   is loaded from CSV or reconstructed from TimescaleDB (proven for all 6 machines).

@@ -14,6 +14,7 @@ from types import TracebackType
 from senseminds.infrastructure.db import APPLICATION, Database
 from senseminds.infrastructure.repositories.postgres import (
     PostgresAssetRepository,
+    PostgresEngineRunRepository,
     PostgresFindingRepository,
     PostgresModelRegistry,
     PostgresReportRepository,
@@ -36,6 +37,7 @@ class UnitOfWork:
         self.rules = PostgresRuleVersionRepository(self._session)
         self.models = PostgresModelRegistry(self._session)
         self.users = PostgresUserRepository(self._session)
+        self.runs = PostgresEngineRunRepository(self._session)
         return self
 
     def commit(self) -> None:

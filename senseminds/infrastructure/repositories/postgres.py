@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable
+from datetime import datetime
 
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -115,12 +116,34 @@ class PostgresFindingRepository(FindingRepository):
         return [Finding.model_validate(_as_dict(r[0])) for r in rows]
 
     def current(self, unit: str) -> list[Finding]:
-        # One row per condition: the newest observation of each identity_key.
+        """The newest observation of each condition the LATEST run still observed.
+
+        Unchanged findings are not re-appended (see application/finding_delta.py),
+        so "latest per identity" alone would keep a cleared condition alive forever.
+        Filtering to the latest run's observed set makes a resolved condition
+        disappear, while an unchanged one keeps its last observation.
+        """
         rows = self._s.execute(
             text(
-                "SELECT DISTINCT ON (identity_key) document FROM application.finding "
-                "WHERE unit = :unit "
-                "ORDER BY identity_key, produced_at DESC, finding_id DESC"
+                """
+                WITH latest AS (
+                    SELECT observed_identities AS ids
+                    FROM application.engine_run
+                    WHERE unit = :unit AND status = 'completed'
+                    ORDER BY started_at DESC
+                    LIMIT 1
+                )
+                SELECT DISTINCT ON (f.identity_key) f.document
+                FROM application.finding f
+                LEFT JOIN latest ON TRUE
+                WHERE f.unit = :unit
+                  AND (
+                        latest.ids IS NULL
+                     OR jsonb_array_length(latest.ids) = 0
+                     OR jsonb_exists(latest.ids, f.identity_key)
+                  )
+                ORDER BY f.identity_key, f.produced_at DESC, f.finding_id DESC
+                """
             ),
             {"unit": unit},
         )
@@ -326,18 +349,20 @@ class PostgresEngineRunRepository:
             text(
                 "UPDATE application.engine_run SET status = :st, finished_at = :fat, "
                 "finding_count = :fc, engine_versions = CAST(:ev AS JSONB), "
-                "artifact_ids = CAST(:aid AS JSONB) WHERE run_id = :rid"
+                "artifact_ids = CAST(:aid AS JSONB), "
+                "observed_identities = CAST(:obs AS JSONB) WHERE run_id = :rid"
             ),
             {"st": run.status.value, "fat": run.finished_at, "fc": run.finding_count,
              "ev": json.dumps(run.engine_versions, sort_keys=True),
-             "aid": json.dumps(list(run.artifact_ids)), "rid": run.run_id},
+             "aid": json.dumps(list(run.artifact_ids)),
+             "obs": json.dumps(list(run.observed_identities)), "rid": run.run_id},
         )
 
     def find(self, unit: str, input_hash: str) -> EngineRun | None:
         row = self._s.execute(
             text("SELECT run_id, unit, input_hash, status, started_at, finished_at, "
-                 "finding_count, engine_versions, artifact_ids FROM application.engine_run "
-                 "WHERE unit = :unit AND input_hash = :ih"),
+                 "finding_count, engine_versions, artifact_ids, observed_identities "
+                 "FROM application.engine_run WHERE unit = :unit AND input_hash = :ih"),
             {"unit": unit, "ih": input_hash},
         ).one_or_none()
         return _engine_run(row) if row else None
@@ -345,11 +370,20 @@ class PostgresEngineRunRepository:
     def for_unit(self, unit: str) -> list[EngineRun]:
         rows = self._s.execute(
             text("SELECT run_id, unit, input_hash, status, started_at, finished_at, "
-                 "finding_count, engine_versions, artifact_ids FROM application.engine_run "
-                 "WHERE unit = :unit ORDER BY started_at, run_id"),
+                 "finding_count, engine_versions, artifact_ids, observed_identities "
+                 "FROM application.engine_run WHERE unit = :unit ORDER BY started_at, run_id"),
             {"unit": unit},
         )
         return [_engine_run(r) for r in rows]
+
+    def last_learned_at(self, unit: str) -> datetime | None:
+        """When the Phase-B models last ran for this asset (throttling)."""
+        row = self._s.execute(
+            text("SELECT max(started_at) FROM application.engine_run "
+                 "WHERE unit = :unit AND learned AND status = 'completed'"),
+            {"unit": unit},
+        ).one_or_none()
+        return row[0] if row and row[0] else None
 
     def count(self) -> int:
         result = self._s.execute(text("SELECT count(*) FROM application.engine_run"))
@@ -362,6 +396,9 @@ def _engine_run(row: object) -> EngineRun:
         started_at=row[4], finished_at=row[5], finding_count=row[6],
         engine_versions=_as_dict(row[7]) if row[7] else {},
         artifact_ids=tuple(json.loads(row[8]) if isinstance(row[8], str) else row[8]),
+        observed_identities=tuple(
+            json.loads(row[9]) if isinstance(row[9], str) else (row[9] or [])
+        ) if len(row) > 9 else (),
     )
 
 

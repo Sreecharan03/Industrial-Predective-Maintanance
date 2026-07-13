@@ -37,7 +37,11 @@ class AppState:
 def build_state(settings: Settings) -> AppState:
     db = build_database(settings)
     store = LocalArtifactStore(settings.artifact_root)
-    analysis = AnalysisUseCase(db, store, DbTimeSeriesSource(db))
+    analysis = AnalysisUseCase(
+        db, store, DbTimeSeriesSource(db),
+        learning_enabled=settings.learning_enabled,
+        learning_interval_minutes=settings.learning_interval_minutes,
+    )
     llm = LlmQueryService(EvidenceRetriever(db), build_language_model(settings))
     return AppState(settings=settings, db=db, analysis=analysis, llm=llm)
 

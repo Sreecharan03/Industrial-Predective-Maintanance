@@ -9,6 +9,21 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 MODE="${1:-sim}"   # sim | batch | none
+DATA="${SM_DATA:-../../senseminds-data}"
+
+# Postgres keeps several directories that are EMPTY while it is stopped, and some
+# network/overlay filesystems (the Lightning teamspace mount among them) silently
+# drop empty directories. Postgres then refuses to start:
+#     FATAL: could not open directory "pg_notify": No such file or directory
+# Recreate them on every boot — cheap, idempotent, and it makes the restart reliable.
+if [ -d "$DATA/pgdata/base" ]; then
+  echo "▸ Repairing Postgres runtime directories…"
+  docker run --rm -v "$(cd "$DATA/pgdata" && pwd)":/pgdata alpine sh -c '
+    for d in pg_notify pg_stat_tmp pg_replslot pg_tblspc pg_twophase pg_serial \
+             pg_snapshots pg_commit_ts pg_logical/snapshots pg_logical/mappings \
+             pg_wal/archive_status; do mkdir -p "/pgdata/$d"; done
+    chown -R 999:999 /pgdata 2>/dev/null || true' >/dev/null 2>&1 || true
+fi
 
 echo "▸ Bringing up the core stack (postgres · migrate · api · dashboard)…"
 docker compose up -d --build

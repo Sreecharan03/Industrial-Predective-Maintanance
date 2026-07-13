@@ -91,6 +91,15 @@ class Settings(BaseSettings):
         default=True, description="Load processed CSVs into sensor history if empty, on start."
     )
 
+    # Phase B (pattern learning + forecasting). These look for slow trends, so they
+    # run on their own, slower cadence rather than on every 30-second analysis.
+    learning_enabled: bool = Field(
+        default=True, description="Run novelty / regime / forecast models."
+    )
+    learning_interval_minutes: int = Field(
+        default=30, description="Minimum minutes between Phase-B runs per asset."
+    )
+
     # Live machine simulator (testing / demo). Generates 30-second data.
     live_data_root: Path = Field(
         default=Path("./live_data"), description="Where the growing 30s CSVs are written."

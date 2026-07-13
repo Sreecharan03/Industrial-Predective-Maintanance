@@ -82,6 +82,14 @@ class EngineRun(FrozenModel):
     finding_count: int = 0
     engine_versions: dict[str, str] = Field(default_factory=dict)
     artifact_ids: tuple[str, ...] = Field(default_factory=tuple)
+    observed_identities: tuple[str, ...] = Field(
+        default_factory=tuple,
+        description="Every condition this run observed — including unchanged ones. "
+                    "Lets 'current' drop conditions that have cleared.",
+    )
+    learned: bool = Field(
+        default=False, description="Whether this run also ran the Phase-B models."
+    )
 
 
 class Role(FrozenModel):

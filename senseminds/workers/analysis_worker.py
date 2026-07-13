@@ -75,7 +75,11 @@ def main(settings: Settings | None = None) -> None:  # pragma: no cover - entryp
     if settings.bootstrap_on_start:
         _maybe_bootstrap(db, settings)
     source = DbTimeSeriesSource(db)
-    use_case = AnalysisUseCase(db, LocalArtifactStore(settings.artifact_root), source)
+    use_case = AnalysisUseCase(
+        db, LocalArtifactStore(settings.artifact_root), source,
+        learning_enabled=settings.learning_enabled,
+        learning_interval_minutes=settings.learning_interval_minutes,
+    )
     AnalysisWorker(use_case, source, settings.worker_interval_seconds).run_forever()
 
 

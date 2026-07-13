@@ -76,6 +76,8 @@ def main(settings: Settings | None = None) -> None:  # pragma: no cover - entryp
         backfill_days=settings.sim_backfill_days,
         drift=build_drift(settings),
         reset=settings.sim_reset,
+        learning_enabled=settings.learning_enabled,
+        learning_interval_minutes=settings.learning_interval_minutes,
     )
     sim = LiveSimulator(db, cfg)
     units = sim.seed()

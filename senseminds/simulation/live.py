@@ -47,6 +47,8 @@ class SimulatorConfig:
     backfill_days: float = 3.0     # history so the engines have something to stand on
     drift: Drift | None = None
     reset: bool = True             # start the demo from a clean slate
+    learning_enabled: bool = True
+    learning_interval_minutes: int = 30
 
 
 class LiveSimulator:
@@ -56,7 +58,9 @@ class LiveSimulator:
         self._sink = DbReadingSink(db)
         self._sensors = UnitSensorCatalog(db)
         self._analysis = AnalysisUseCase(
-            db, LocalArtifactStore(cfg.artifact_root), DbTimeSeriesSource(db)
+            db, LocalArtifactStore(cfg.artifact_root), DbTimeSeriesSource(db),
+            learning_enabled=cfg.learning_enabled,
+            learning_interval_minutes=cfg.learning_interval_minutes,
         )
         self._generators: dict[str, MachineGenerator] = {}
         self._live_start = align_to_tick(datetime.now(tz=UTC).replace(tzinfo=None))
