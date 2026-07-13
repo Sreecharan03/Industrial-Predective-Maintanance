@@ -81,14 +81,36 @@ Design is captured in **19 Architecture Decision Records** under
 | **Ingestion worker** (idempotent analysis cycles) | Batch cycles work; live streaming deferred | **85%** |
 | **Docker / deployment** (compose stack) | Runs end-to-end; needs dep pinning + hardening | **90%** |
 | **Monitoring / logging** (JSON logs, `/metrics`, `/ready`) | Basic done; no OpenTelemetry tracing yet | **60%** |
-| **Dashboard** | Backend endpoints done; **frontend not built** | **40%** |
+| **Dashboard** (React SPA — overview, fleets, asset detail, findings, reports, Copilot) | Built, runs in the stack | **90%** |
 | **Phase C — supervised learning** | Deferred (needs labeled maintenance events) | **0%** |
 | **Testing** | 226 tests (unit + parity + integration) | **90%** |
 
-**Overall platform: ~85–90% of a production-style MVP.**
-The intelligence core and serving layer are done; the main remaining work is the
-**dashboard frontend**, wiring pattern-learning/forecasting into the live run,
-dependency pinning, and (future) streaming + supervised learning.
+**Overall platform: ~90% of a production-style MVP.**
+The intelligence core, serving layer and dashboard are done; the main remaining
+work is wiring pattern-learning/forecasting into the live run, dependency
+pinning, and (future) streaming + supervised learning.
+
+### Dashboard
+
+A light, warm React SPA (`frontend/`) — deliberately **not** the usual dark-navy
+"AI" look. The palette is **computationally validated**, not eyeballed: every hue
+passes a lightness band, chroma floor, contrast (≥3:1 on the light surface) and
+colour-vision-deficiency separation check (adjacent ΔE2000 ≥ 12 under protan /
+deutan / tritan simulation).
+
+- **Categorical** (chart series, fixed order): `#7C3AED` violet · `#0F9D8F` teal ·
+  `#C026D3` fuchsia · `#4D7C0F` olive · `#0284C7` cyan
+- **Status** (reserved, always with an icon + label — never colour alone):
+  `#15803D` healthy · `#57534E` info · `#B45309` watch · `#BE123C` critical
+
+Pages: **Overview** (plant health, fleet, what needs a look) · **Refrigeration /
+Air Compressors / Nitrogen Plant** fleets · **Asset detail** (findings, sensors,
+knowledge graph, reports, run history, one-click analysis) · **Findings** ·
+**Reports** · **Plant Copilot** (grounded chat — every claim shows its cited
+finding ids, and gaps appear as *insufficient evidence*).
+
+It shows only what the platform actually computes — **no invented failure
+probability or RUL**, because the backend does not produce them yet.
 
 ### Test suite
 - **226 passing** with a database (unit + parity + integration).
@@ -122,8 +144,11 @@ The platform is honest — it does **not** invent problems:
 cd deployment
 cp .env.example .env          # set POSTGRES_PASSWORD, JWT secret, admin password
                               # optional: SENSEMINDS_GROQ_API_KEY (empty => offline stub)
-docker compose up --build     # postgres+timescale, migrate, api, worker
+docker compose up --build     # postgres+timescale, migrate, api, worker, dashboard
 ```
+
+* **Dashboard → http://localhost:3000** (sign in with the admin credentials from `.env`)
+* API → http://localhost:8000
 
 Then:
 
@@ -172,6 +197,7 @@ senseminds/
 │                      artifact store, logging
 ├── api/               FastAPI app, routers, JWT auth, request logging
 └── workers/           continuous analysis worker
+frontend/              React + Vite + Tailwind dashboard (validated light palette)
 deployment/            Dockerfile, docker-compose.yml, .env.example
 docs/architecture/     ADR-001 … ADR-019
 tests/                 226 tests (unit + parity + integration)
@@ -182,7 +208,6 @@ tests/                 226 tests (unit + parity + integration)
 ## Next steps (roadmap)
 
 **MVP-completing (near term)**
-- **Dashboard frontend** (SPA) over the existing API — the backend is ready.
 - **Wire Pattern Learning + Forecasting into the live `AnalysisUseCase`** so
   novelty/regime/forecast findings persist alongside the deterministic ones.
 - **Pin dependencies** (lockfile) — the Docker image currently installs unpinned

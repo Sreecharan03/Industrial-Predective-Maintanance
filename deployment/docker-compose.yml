@@ -72,6 +72,13 @@ services:
       - ../../Datasets:/data/datasets:ro
     networks: [smnet]
 
+  dashboard:
+    build: { context: ../frontend, dockerfile: Dockerfile }
+    depends_on:
+      api: { condition: service_started }
+    ports: ["3000:80"]
+    networks: [smnet]
+
   pgadmin:
     image: dpage/pgadmin4
     profiles: ["dev"]

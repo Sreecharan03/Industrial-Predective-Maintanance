@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+  }
+  /* Numbers read as data, not prose. */
+  .num {
+    @apply font-mono tabular-nums tracking-tight;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-card border border-line rounded-xl2 shadow-soft;
+  }
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-lift hover:-translate-y-0.5;
+  }
+  /* Micro-label above a value */
+  .eyebrow {
+    @apply text-[10px] font-bold uppercase tracking-[0.12em] text-ink-muted;
+  }
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1
+           text-xs font-semibold ring-1;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5
+           text-sm font-semibold transition-all duration-200
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white shadow-soft
+           hover:bg-brand-700 hover:shadow-lift active:translate-y-px;
+  }
+  .btn-quiet {
+    @apply btn bg-card text-ink-soft border border-line hover:bg-canvas hover:text-ink;
+  }
+  .icon {
+    font-family: "Material Symbols Rounded";
+    font-weight: normal;
+    font-style: normal;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    font-variation-settings: "FILL" 0, "wght" 500, "GRAD" 0, "opsz" 24;
+  }
+}
+
+/* Recessive scrollbars — the data should be the loudest thing on screen. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #E2DDD9; border-radius: 9999px; border: 3px solid #FBFAF9; }
+::-webkit-scrollbar-thumb:hover { background: #CFC8C3; }
+::-webkit-scrollbar-track { background: transparent; }

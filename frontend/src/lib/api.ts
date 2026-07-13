@@ -1,0 +1,172 @@
+/** Typed client for the SenseMinds 360 REST API. */
+
+const BASE = "/api/v1";
+const TOKEN_KEY = "sm.token";
+
+export const auth = {
+  get token() {
+    return localStorage.getItem(TOKEN_KEY);
+  },
+  set(token: string) {
+    localStorage.setItem(TOKEN_KEY, token);
+  },
+  clear() {
+    localStorage.removeItem(TOKEN_KEY);
+  },
+};
+
+class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (auth.token) headers.set("Authorization", `Bearer ${auth.token}`);
+  if (init.body && !headers.has("Content-Type"))
+    headers.set("Content-Type", "application/json");
+
+  const res = await fetch(`${BASE}${path}`, { ...init, headers });
+  if (res.status === 401) {
+    auth.clear();
+    window.location.hash = "#/login";
+    throw new ApiError(401, "Session expired");
+  }
+  if (!res.ok) throw new ApiError(res.status, (await res.text()) || res.statusText);
+  return res.json() as Promise<T>;
+}
+
+/* ----------------------------- domain types ---------------------------- */
+
+export type Severity = "ok" | "info" | "warning" | "critical";
+export type Origin = "derived" | "diagnosed" | "learned";
+
+export interface Evidence {
+  artifact_id: string;
+  description: string;
+  observed_value: number | string | null;
+}
+
+export interface Finding {
+  finding_id: string;
+  identity_key: string;
+  finding_type: string;
+  category: string;
+  scope: string;
+  origin: Origin;
+  summary: string;
+  detail: string;
+  target_key: string;
+  equipment_key: string;
+  subsystem_key: string | null;
+  severity: Severity;
+  confidence: { value: number; rationale: string };
+  evidence: Evidence[];
+  source_engine: string;
+  observed_window: { start: string | null; end: string | null };
+  triggered_by: string[];
+}
+
+export interface Sensor {
+  key: string;
+  display_name: string;
+  sensor_type: string;
+  unit: { symbol: string; assumed: boolean };
+}
+
+export interface AssetSummary {
+  unit: string;
+  equipment_class: string;
+  display_name: string;
+  sensor_count: number;
+}
+
+export interface Asset extends AssetSummary {
+  sensors: Sensor[];
+  subsystems: { key: string; display_name: string; sensor_keys: string[] }[];
+}
+
+export interface GraphNode {
+  id: string;
+  type: string;
+  properties: Record<string, unknown>;
+}
+export interface GraphEdge {
+  src: string;
+  dst: string;
+  type: string;
+  properties: Record<string, unknown>;
+}
+
+export interface Report {
+  report_id: string;
+  report_type: string;
+  persona: string;
+  unit: string;
+  requested_at: string;
+  cited_finding_ids: string[];
+  payload: Record<string, unknown>;
+}
+
+export interface EngineRun {
+  run_id: string;
+  unit: string;
+  input_hash: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  finding_count: number;
+  artifact_ids: string[];
+}
+
+export interface GroundedClaim {
+  text: string;
+  category: "fact" | "diagnosis" | "hypothesis" | "forecast";
+  citations: string[];
+}
+
+export interface GroundedAnswer {
+  unit: string;
+  persona: string;
+  answer: string;
+  claims: GroundedClaim[];
+  insufficient: string[];
+  citations: string[];
+}
+
+/* -------------------------------- calls -------------------------------- */
+
+export const api = {
+  async login(username: string, password: string) {
+    const body = new URLSearchParams({ username, password });
+    const res = await fetch(`${BASE}/auth/token`, { method: "POST", body });
+    if (!res.ok) throw new ApiError(res.status, "Incorrect employee ID or password");
+    const data = (await res.json()) as { access_token: string };
+    auth.set(data.access_token);
+  },
+  me: () => req<{ username: string; roles: string[] }>("/auth/me"),
+
+  assets: () => req<AssetSummary[]>("/assets"),
+  asset: (unit: string) => req<Asset>(`/assets/${encodeURIComponent(unit)}`),
+  findings: (unit: string) => req<Finding[]>(`/assets/${encodeURIComponent(unit)}/findings`),
+  diagnoses: (unit: string) => req<Finding[]>(`/assets/${encodeURIComponent(unit)}/diagnoses`),
+  reports: (unit: string) => req<Report[]>(`/assets/${encodeURIComponent(unit)}/reports`),
+  graph: (unit: string) =>
+    req<{ unit: string; nodes: GraphNode[]; edges: GraphEdge[] }>(
+      `/assets/${encodeURIComponent(unit)}/graph`,
+    ),
+  runs: (unit: string) => req<EngineRun[]>(`/runs/${encodeURIComponent(unit)}`),
+
+  analyze: (unit: string) =>
+    req<{ unit: string; run_id: string | null; finding_count: number; replayed: boolean }>(
+      "/analyze",
+      { method: "POST", body: JSON.stringify({ unit }) },
+    ),
+
+  ask: (unit: string, question: string, persona: string) =>
+    req<GroundedAnswer>("/llm/query", {
+      method: "POST",
+      body: JSON.stringify({ unit, question, persona }),
+    }),
+};
