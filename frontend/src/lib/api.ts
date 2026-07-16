@@ -120,6 +120,31 @@ export interface EngineRun {
   artifact_ids: string[];
 }
 
+export interface Alert {
+  alert_id: string;
+  unit: string;
+  identity_key: string;
+  finding_id: string;
+  kind: "triggered" | "reminder" | "resolved";
+  severity: Severity;
+  subject: string;
+  payload: {
+    display_name?: string;
+    finding_type?: string;
+    summary?: string;
+    detail?: string;
+    target_key?: string;
+    subsystem_key?: string | null;
+    detected_at?: string;
+    evidence?: { description: string; observed_value: number | string | null }[];
+  };
+  status: "pending" | "sent" | "failed" | "suppressed" | "skipped";
+  attempts: number;
+  last_error: string | null;
+  created_at: string;
+  sent_at: string | null;
+}
+
 export interface SensorPoint { t: string; v: number }
 export interface SensorTrace {
   key: string;
@@ -170,6 +195,12 @@ export const api = {
       `/assets/${encodeURIComponent(unit)}/graph`,
     ),
   runs: (unit: string) => req<EngineRun[]>(`/runs/${encodeURIComponent(unit)}`),
+
+  alerts: (limit = 100) => req<Alert[]>(`/alerts?limit=${limit}`),
+  unitAlerts: (unit: string, limit = 50) =>
+    req<Alert[]>(`/assets/${encodeURIComponent(unit)}/alerts?limit=${limit}`),
+  testAlert: () =>
+    req<{ sent: boolean; to: string[]; detail: string }>("/alerts/test", { method: "POST" }),
 
   telemetry: (unit: string, hours = 6) =>
     req<Telemetry>(

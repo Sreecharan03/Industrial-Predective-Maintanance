@@ -40,11 +40,11 @@ curl -sf http://localhost:8000/ready >/dev/null 2>&1 \
 case "$MODE" in
   sim)
     echo "▸ Starting the live 30-second simulator (resumes; does not wipe data)…"
-    docker compose --profile sim up -d simulator
+    docker compose --profile sim up -d --build simulator
     ;;
   batch)
     echo "▸ Starting the batch worker (real historical CSVs)…"
-    docker compose --profile batch up -d worker
+    docker compose --profile batch up -d --build worker
     ;;
   none)
     echo "▸ No data feed started."

@@ -16,6 +16,7 @@ import signal
 import threading
 from collections.abc import Sequence
 
+from senseminds.alerting import build_alerting
 from senseminds.application.analysis_use_case import AnalysisRunResult, AnalysisUseCase
 from senseminds.config import Settings, get_settings
 from senseminds.infrastructure.artifact_store.local import LocalArtifactStore
@@ -75,10 +76,12 @@ def main(settings: Settings | None = None) -> None:  # pragma: no cover - entryp
     if settings.bootstrap_on_start:
         _maybe_bootstrap(db, settings)
     source = DbTimeSeriesSource(db)
+    policy, dispatcher = build_alerting(db, settings)
     use_case = AnalysisUseCase(
         db, LocalArtifactStore(settings.artifact_root), source,
         learning_enabled=settings.learning_enabled,
         learning_interval_minutes=settings.learning_interval_minutes,
+        alert_policy=policy, alert_dispatcher=dispatcher,
     )
     AnalysisWorker(use_case, source, settings.worker_interval_seconds).run_forever()
 

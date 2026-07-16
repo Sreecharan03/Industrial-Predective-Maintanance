@@ -3,6 +3,7 @@ import Layout from "./components/Layout";
 import AssetDetail from "./pages/AssetDetail";
 import Copilot from "./pages/Copilot";
 import Findings from "./pages/Findings";
+import Alerts from "./pages/Alerts";
 import Fleet from "./pages/Fleet";
 import Login from "./pages/Login";
 import Overview from "./pages/Overview";
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/fleet/:slug" element={<Fleet />} />
         <Route path="/asset/:unit" element={<AssetDetail />} />
         <Route path="/findings" element={<Findings />} />
+        <Route path="/alerts" element={<Alerts />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/copilot" element={<Copilot />} />
       </Route>

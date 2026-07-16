@@ -21,6 +21,7 @@ from types import TracebackType
 from senseminds.infrastructure.db import APPLICATION, Database
 from senseminds.infrastructure.graph_store import PostgresKnowledgeGraph
 from senseminds.infrastructure.repositories.postgres import (
+    PostgresAlertRepository,
     PostgresAssetRepository,
     PostgresEngineRunRepository,
     PostgresFindingRepository,
@@ -48,6 +49,7 @@ class AnalysisUnitOfWork:
         self.models = PostgresModelRegistry(self._session)
         self.users = PostgresUserRepository(self._session)
         self.runs = PostgresEngineRunRepository(self._session)
+        self.alerts = PostgresAlertRepository(self._session)
         # Bound to the SAME session -> the graph projection is part of this txn.
         self.graph = PostgresKnowledgeGraph(session=self._session)
         return self

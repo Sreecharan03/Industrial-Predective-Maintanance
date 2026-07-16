@@ -19,6 +19,7 @@ from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
+from senseminds.alerting import AlertDispatcher, AlertPolicy
 from senseminds.application.finding_delta import is_material_change
 from senseminds.application.pipeline import DeterministicPipeline
 from senseminds.engines.health import HealthEngine
@@ -68,6 +69,7 @@ class AnalysisRunResult:
     replayed: bool = False      # a run for this input already existed (no-op)
     recorded: int = 0           # of those, how many were NEW or materially changed
     learned: bool = False       # whether the Phase-B models also ran
+    alerts: int = 0             # escalation alerts this run enqueued
 
 
 def _now() -> datetime:
@@ -85,6 +87,8 @@ class AnalysisUseCase:
         rules: tuple[RuleDefinition, ...] = DEFAULT_RULES,
         learning_enabled: bool = True,
         learning_interval_minutes: int = 30,
+        alert_policy: AlertPolicy | None = None,
+        alert_dispatcher: AlertDispatcher | None = None,
     ) -> None:
         self._db = db
         self._artifacts = artifact_store
@@ -96,6 +100,11 @@ class AnalysisUseCase:
 
         # Phase B: unsupervised + forecasting. Expensive (forecasting back-tests every
         # sensor), and about slow trends — so it runs on its own, slower cadence.
+        # Escalation. The policy decides transitions INSIDE the run's transaction
+        # (outbox); the dispatcher emails AFTER commit and can never fail a run.
+        self._alert_policy = alert_policy
+        self._alert_dispatcher = alert_dispatcher
+
         self._learning_enabled = learning_enabled
         self._learning_interval = timedelta(minutes=learning_interval_minutes)
         self._features = FeaturePipeline()
@@ -156,6 +165,19 @@ class AnalysisUseCase:
                 f for f in findings if is_material_change(existing.get(f.identity_key), f)
             )
 
+            # Escalation decisions commit WITH the findings (outbox pattern): the
+            # policy sees the previous current view vs. this run's full set, so a
+            # newly-critical condition enqueues `triggered`, a cleared one
+            # `resolved`, a lingering one `reminder` — all in this transaction.
+            alerts: list = []
+            if self._alert_policy is not None:
+                alerts = self._alert_policy.decide(
+                    unit=unit, display_name=series.asset.display_name,
+                    previous=tuple(existing.values()), observed=findings,
+                    latest=uow.alerts.latest_by_identity(unit), now=started,
+                )
+                uow.alerts.add_many(alerts)
+
             artifact_ids = tuple(self._artifacts.save(r) for r in results)
             uow.assets.save(series.asset)
             uow.findings.add_many(changed)
@@ -191,10 +213,21 @@ class AnalysisUseCase:
                 learned=learn,
             ))
         # commit happens on context exit; an exception rolls the whole run back.
+
+        # Post-commit delivery: the alert rows are durable now, so a mail failure
+        # only delays the email (retried next tick) — it can never lose the alert
+        # or roll back the analysis. Runs every tick (cheap SELECT when idle) so
+        # earlier failed sends are retried even when THIS run enqueued nothing.
+        if self._alert_dispatcher is not None:
+            try:
+                self._alert_dispatcher.dispatch()
+            except Exception:
+                _log.exception("alert_dispatch_failed", extra={"unit": unit})
+
         return AnalysisRunResult(
             unit=unit, input_hash=input_hash, run_id=run_id,
             finding_count=len(findings), findings=findings,
-            recorded=len(changed), learned=learn,
+            recorded=len(changed), learned=learn, alerts=len(alerts),
         )
 
     # ------------------------------ Phase B ------------------------------

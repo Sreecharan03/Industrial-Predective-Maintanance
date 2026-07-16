@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 
+from senseminds.alerting import build_alerting
 from senseminds.api.security import decode_access_token
 from senseminds.application.analysis_use_case import AnalysisUseCase
 from senseminds.config import Settings
@@ -37,10 +38,12 @@ class AppState:
 def build_state(settings: Settings) -> AppState:
     db = build_database(settings)
     store = LocalArtifactStore(settings.artifact_root)
+    policy, dispatcher = build_alerting(db, settings)
     analysis = AnalysisUseCase(
         db, store, DbTimeSeriesSource(db),
         learning_enabled=settings.learning_enabled,
         learning_interval_minutes=settings.learning_interval_minutes,
+        alert_policy=policy, alert_dispatcher=dispatcher,
     )
     llm = LlmQueryService(EvidenceRetriever(db), build_language_model(settings))
     return AppState(settings=settings, db=db, analysis=analysis, llm=llm)

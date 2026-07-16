@@ -20,7 +20,9 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy import text
 
+from senseminds.alerting import build_alerting
 from senseminds.application.analysis_use_case import AnalysisUseCase
+from senseminds.config import get_settings
 from senseminds.infrastructure.artifact_store.local import LocalArtifactStore
 from senseminds.infrastructure.db import APPLICATION, KNOWLEDGE, SENSOR_HISTORY, Database
 from senseminds.infrastructure.logging import get_logger
@@ -57,10 +59,12 @@ class LiveSimulator:
         self._cfg = cfg
         self._sink = DbReadingSink(db)
         self._sensors = UnitSensorCatalog(db)
+        policy, dispatcher = build_alerting(db, get_settings())
         self._analysis = AnalysisUseCase(
             db, LocalArtifactStore(cfg.artifact_root), DbTimeSeriesSource(db),
             learning_enabled=cfg.learning_enabled,
             learning_interval_minutes=cfg.learning_interval_minutes,
+            alert_policy=policy, alert_dispatcher=dispatcher,
         )
         self._generators: dict[str, MachineGenerator] = {}
         self._live_start = align_to_tick(datetime.now(tz=UTC).replace(tzinfo=None))

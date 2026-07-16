@@ -10,6 +10,7 @@ const NAV = [
     to: `/fleet/${c.slug}`, icon: c.icon, label: c.label,
   })),
   { to: "/findings", icon: "fact_check", label: "Issues" },
+  { to: "/alerts", icon: "notifications_active", label: "Alerts" },
   { to: "/reports", icon: "description", label: "Reports" },
   { to: "/copilot", icon: "auto_awesome", label: "Copilot" },
 ];

@@ -91,6 +91,26 @@ class Settings(BaseSettings):
         default=True, description="Load processed CSVs into sensor history if empty, on start."
     )
 
+    # Alert escalation (email). Alerts are always RECORDED; email is sent only when
+    # SMTP is configured. A mail failure never affects the analysis - the alert row
+    # is committed with the finding (outbox pattern) and delivery is retried.
+    smtp_host: str = Field(default="", description="SMTP server; empty disables email.")
+    smtp_port: int = Field(default=587)
+    smtp_user: str = Field(default="")
+    smtp_password: str = Field(default="")
+    smtp_starttls: bool = Field(default=True)
+    mail_from: str = Field(default="")
+    mail_to: str = Field(default="", description="Comma-separated recipients.")
+    alert_reminder_minutes: int = Field(
+        default=30, description="Escalate again if still critical after this long."
+    )
+    alert_cooldown_minutes: int = Field(
+        default=15, description="Suppress re-triggers of the same condition (flapping)."
+    )
+    dashboard_url: str = Field(
+        default="http://localhost:3000", description="Used for the link in alert emails."
+    )
+
     # Phase B (pattern learning + forecasting). These look for slow trends, so they
     # run on their own, slower cadence rather than on every 30-second analysis.
     learning_enabled: bool = Field(

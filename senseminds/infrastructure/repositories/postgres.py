@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from senseminds.alerting.models import Alert, AlertKind, AlertStatus
 from senseminds.domain.entities import Asset
 from senseminds.findings import Finding
 from senseminds.pattern_learning.registry import ModelMetadata, ModelRegistry
@@ -407,3 +408,97 @@ def _as_dict_or_scalar(value: object) -> object:
     if isinstance(value, str):
         return json.loads(value)
     return value
+
+
+class PostgresAlertRepository:
+    """The escalation outbox. Unlike findings, alert rows ARE mutated - but only
+    their delivery bookkeeping (status/attempts/error/sent_at); what happened and
+    why (kind, payload) is immutable once written."""
+
+    _COLUMNS = ("alert_id, unit, identity_key, finding_id, kind, severity, subject, "
+                "payload, status, attempts, last_error, created_at, sent_at")
+
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def add_many(self, alerts: Iterable[Alert]) -> int:
+        n = 0
+        for a in alerts:
+            self._s.execute(
+                text(
+                    "INSERT INTO application.alert (alert_id, unit, identity_key, "
+                    "finding_id, kind, severity, subject, payload, status, attempts, "
+                    "created_at) VALUES (:aid, :unit, :idk, :fid, :kind, :sev, :subj, "
+                    "CAST(:payload AS JSONB), :status, :att, :cat) "
+                    "ON CONFLICT (alert_id) DO NOTHING"
+                ),
+                {"aid": a.alert_id, "unit": a.unit, "idk": a.identity_key,
+                 "fid": a.finding_id, "kind": a.kind.value, "sev": a.severity,
+                 "subj": a.subject, "payload": json.dumps(a.payload, default=str),
+                 "status": a.status.value, "att": a.attempts, "cat": a.created_at},
+            )
+            n += 1
+        return n
+
+    def latest_by_identity(self, unit: str) -> dict[str, Alert]:
+        """Newest alert per condition - the policy's view of each open incident."""
+        rows = self._s.execute(
+            text(
+                f"SELECT DISTINCT ON (identity_key) {self._COLUMNS} "
+                "FROM application.alert WHERE unit = :unit "
+                "ORDER BY identity_key, created_at DESC"
+            ),
+            {"unit": unit},
+        )
+        alerts = [_alert(r) for r in rows]
+        return {a.identity_key: a for a in alerts}
+
+    def pending(self, max_attempts: int) -> list[Alert]:
+        rows = self._s.execute(
+            text(
+                f"SELECT {self._COLUMNS} FROM application.alert "
+                "WHERE status = 'pending' AND attempts < :max ORDER BY created_at"
+            ),
+            {"max": max_attempts},
+        )
+        return [_alert(r) for r in rows]
+
+    def mark(
+        self,
+        alert_id: str,
+        status: AlertStatus,
+        attempts: int,
+        last_error: str | None = None,
+        sent_at: datetime | None = None,
+    ) -> None:
+        self._s.execute(
+            text(
+                "UPDATE application.alert SET status = :status, attempts = :att, "
+                "last_error = :err, sent_at = COALESCE(:sat, sent_at) "
+                "WHERE alert_id = :aid"
+            ),
+            {"status": status.value, "att": attempts, "err": last_error,
+             "sat": sent_at, "aid": alert_id},
+        )
+
+    def recent(self, limit: int = 100, unit: str | None = None) -> list[Alert]:
+        clause = "WHERE unit = :unit" if unit else ""
+        rows = self._s.execute(
+            text(f"SELECT {self._COLUMNS} FROM application.alert {clause} "
+                 "ORDER BY created_at DESC LIMIT :lim"),
+            {"lim": limit, **({"unit": unit} if unit else {})},
+        )
+        return [_alert(r) for r in rows]
+
+    def count(self) -> int:
+        return int(self._s.execute(
+            text("SELECT count(*) FROM application.alert")).scalar_one())
+
+
+def _alert(row: object) -> Alert:
+    return Alert(
+        alert_id=row[0], unit=row[1], identity_key=row[2], finding_id=row[3],
+        kind=AlertKind(row[4]), severity=row[5], subject=row[6],
+        payload=_as_dict(row[7]) if row[7] else {}, status=AlertStatus(row[8]),
+        attempts=row[9], last_error=row[10], created_at=row[11], sent_at=row[12],
+    )
