@@ -5,14 +5,16 @@ import {
 } from "../lib/api";
 import { SensorChart, isBreaching } from "../components/SensorChart";
 import DigitalTwinPanel from "../components/twin/DigitalTwinPanel";
+import OutlookPanel from "../components/OutlookPanel";
 import { CLASSES, SEVERITY, healthScore, prettySensor, worst } from "../lib/ui";
 import {
   Empty, FindingCard, HealthRing, Icon, Spinner, StatCard, StatusPill,
 } from "../components/ui";
 
-type Tab = "findings" | "twin" | "sensors" | "graph" | "reports" | "runs";
+type Tab = "findings" | "outlook" | "twin" | "sensors" | "graph" | "reports" | "runs";
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "findings", label: "Issues", icon: "fact_check" },
+  { id: "outlook", label: "Outlook", icon: "insights" },
   { id: "twin", label: "Digital Twin", icon: "view_in_ar" },
   { id: "sensors", label: "Sensors", icon: "sensors" },
   { id: "graph", label: "Connections", icon: "graph_3" },
@@ -175,6 +177,8 @@ export default function AssetDetail() {
           )}
         </section>
       )}
+
+      {tab === "outlook" && <OutlookPanel unit={unit} />}
 
       {tab === "twin" && (
         <DigitalTwinPanel asset={asset} findings={findings} telemetry={telemetry} />

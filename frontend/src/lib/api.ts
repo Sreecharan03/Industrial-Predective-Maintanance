@@ -145,6 +145,41 @@ export interface Alert {
   sent_at: string | null;
 }
 
+export interface ForecastOutlook {
+  sensor: string;
+  hours_ahead: number;
+  bound: number | null;
+  projected_value: number | null;
+  model_name: string;
+  model_version: string;
+  backtest_mae: number | null;
+  interval_confidence: number;
+  summary: string;
+  finding_id: string;
+}
+
+export interface Outlook {
+  unit: string;
+  display_name: string;
+  condition_score: number | null;
+  condition_basis: string;
+  weakest_subsystem: { key: string; score: number } | null;
+  soonest: ForecastOutlook | null;
+  forecasts: ForecastOutlook[];
+  novelty: {
+    score: number;
+    windows: number;
+    top_features: { feature: string; deviation: number }[];
+    model_name: string;
+    finding_id: string;
+  } | null;
+  critical_count: number;
+  headline: string;
+  caveat: string;
+  recommendation: string;
+  recommendation_citations: string[];
+}
+
 export interface SensorPoint { t: string; v: number }
 export interface SensorTrace {
   key: string;
@@ -195,6 +230,8 @@ export const api = {
       `/assets/${encodeURIComponent(unit)}/graph`,
     ),
   runs: (unit: string) => req<EngineRun[]>(`/runs/${encodeURIComponent(unit)}`),
+
+  outlook: (unit: string) => req<Outlook>(`/assets/${encodeURIComponent(unit)}/outlook`),
 
   alerts: (limit = 100) => req<Alert[]>(`/alerts?limit=${limit}`),
   unitAlerts: (unit: string, limit = 50) =>
