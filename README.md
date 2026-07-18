@@ -400,6 +400,11 @@ rather than reseeding. Verified by destroying every container — 675,367 readin
 
 ## Deploying to GCP (or any VM)
 
+> **Full guides:** [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) covers Cloud Run +
+> Cloud SQL, secrets, scheduled workers and a pre-deployment checklist.
+> [`docs/API-REFERENCE.md`](docs/API-REFERENCE.md) documents every endpoint for
+> frontend developers. The quick VM recipe below still works for a single box.
+
 The whole platform is one Docker Compose stack, so a single VM is all you need.
 
 ### 1. Create the VM
@@ -553,6 +558,8 @@ senseminds/
 frontend/              React + Vite + Tailwind dashboard (validated light palette)
   └── src/components/twin/   3D digital twin (three.js, lazy-loaded)
 deployment/            Dockerfile, docker-compose.yml, .env.example
+docs/API-REFERENCE.md  Every endpoint, for frontend developers
+docs/DEPLOYMENT.md     Local, VM and GCP deployment
 docs/architecture/     ADR-001 … ADR-019
 tests/                 226 tests (unit + parity + integration)
 ```
