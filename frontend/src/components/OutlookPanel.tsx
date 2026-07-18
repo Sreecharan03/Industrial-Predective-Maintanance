@@ -42,6 +42,113 @@ function Chip({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
+/* ------------------------------------------------------------------ *
+ *  PHASE C PREVIEW — MOCK DATA
+ *
+ *  This card shows the INTENDED design for supervised failure prediction
+ *  and remaining useful life. The numbers are illustrative placeholders,
+ *  not predictions: training either model needs a labelled breakdown
+ *  history the plant has not provided yet (ADR-007 Phase C).
+ *
+ *  It lives in the presentation layer ON PURPOSE. Nothing here touches the
+ *  API, the database, or a finding — so the Copilot, alert escalation and
+ *  reports (which all read persisted evidence) can never pick these values
+ *  up and repeat them as fact. The mock can be looked at; it cannot be used.
+ * ------------------------------------------------------------------ */
+
+/** Stable per-machine placeholders — the same machine always shows the same
+ *  illustrative numbers, so the preview does not flicker between renders. */
+function mockFor(unit: string) {
+  let h = 0;
+  for (let i = 0; i < unit.length; i++) h = (h * 31 + unit.charCodeAt(i)) >>> 0;
+  const probability = 18 + (h % 380) / 10;         // 18.0 – 56.0 %
+  const rulDays = 6 + (h % 47);                    // 6 – 52 days
+  const confidence = 0.72 + ((h >> 3) % 24) / 100; // 0.72 – 0.95
+  return {
+    probability: probability.toFixed(1),
+    rulDays,
+    confidence: confidence.toFixed(2),
+    confidenceLabel: confidence >= 0.85 ? "HIGH" : confidence >= 0.75 ? "MEDIUM" : "LOW",
+  };
+}
+
+function MockFailurePrediction({ unit, drivers }: { unit: string; drivers: string[] }) {
+  const m = mockFor(unit);
+  const named = drivers.length
+    ? drivers.map((d) => d.replace(/_/g, " ")).join(", ")
+    : "vibration, bearing temperature, oil temperature";
+
+  return (
+    <section
+      className="rounded-2xl border-2 border-dashed border-warn-ring bg-warn-soft/30
+                 overflow-hidden animate-rise"
+    >
+      {/* Unmissable banner — this is the first thing read, by design. */}
+      <div className="bg-warn text-white px-5 py-2.5 flex items-start gap-2">
+        <Icon name="science" className="text-[18px] mt-px shrink-0" />
+        <p className="text-[12px] font-bold leading-snug">
+          MOCK DATA — DESIGN PREVIEW ONLY.
+          <span className="font-semibold opacity-95">
+            {" "}These numbers are illustrative placeholders, not predictions. Real values
+            arrive once labelled breakdown history is available.
+          </span>
+        </p>
+      </div>
+
+      <div className="px-6 pt-5 pb-4 opacity-[0.72]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <Icon name="auto_awesome" className="text-[22px] text-ink-muted" />
+            <h3 className="text-[17px] font-extrabold tracking-tight text-ink-soft">
+              Failure Prediction
+            </h3>
+          </div>
+          <span className="pill bg-canvas text-ink-muted ring-1 ring-line text-[10px] font-bold">
+            PHASE C · NOT TRAINED
+          </span>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <Metric label="Failure probability" value={m.probability} unit="%" tone="ink"
+            hint="Placeholder — needs labelled failures to compute." />
+          <div className="sm:text-right">
+            <Metric label="Remaining useful life" value={String(m.rulDays)} unit="days" tone="ink"
+              hint="Placeholder — needs run-to-failure cycles to compute." />
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Chip label="ML engine" value="XGBoost Multi-Feature"
+            sub="illustrative — no such model is trained" />
+          <Chip label="Confidence" value={`${m.confidenceLabel} (${m.confidence})`}
+            sub="illustrative — unmeasurable without labels" />
+        </div>
+
+        <div className="mt-4">
+          <p className="text-[10.5px] font-bold tracking-[0.09em] uppercase text-ink-muted">
+            Recommendation (example wording)
+          </p>
+          <div className="mt-1.5 rounded-xl bg-card border-l-4 border-line px-4 py-3">
+            <p className="text-[13px] text-ink-soft leading-relaxed">
+              Model flags abnormal readings: {named}. Review these parameters and schedule
+              an inspection.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-warn-ring bg-warn-soft/60 px-6 py-3.5">
+        <p className="text-[11.5px] text-ink-soft leading-relaxed">
+          <b>What unlocks the real version:</b> a labelled failure history — breakdown dates,
+          machine, cause and action taken. With roughly 30–50 labelled events per failure mode
+          these fields become trained, validated predictions in this exact layout. The card
+          above it (<b>Predictive Outlook</b>) is live and real today.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 export default function OutlookPanel({ unit }: { unit: string }) {
   const [data, setData] = useState<Outlook | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -200,6 +307,12 @@ export default function OutlookPanel({ unit }: { unit: string }) {
           </p>
         </section>
       )}
+
+      {/* ---- Phase C design preview (mock, clearly marked) ---- */}
+      <MockFailurePrediction
+        unit={unit}
+        drivers={(novelty?.top_features ?? []).map((f) => f.feature)}
+      />
 
       {/* ---- every projected approach ---- */}
       {data.forecasts.length > 0 && (
