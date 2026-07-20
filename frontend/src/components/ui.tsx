@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import type { Finding, Severity } from "../lib/api";
 import { ORIGIN, SEVERITY, prettySensor, plainMeaning } from "../lib/ui";
+import { VerdictButtons } from "./VerdictButtons";
 
 export function Icon({ name, className = "" }: { name: string; className?: string }) {
   return (
@@ -165,6 +166,9 @@ export function FindingCard({ f, onCite }: { f: Finding; onCite?: (id: string) =
             <div className="mt-3 rounded-xl bg-canvas border border-line p-3 space-y-2">
               <p className="text-sm font-medium leading-snug">{f.summary}</p>
               <p className="text-sm text-ink-soft leading-relaxed">{f.detail}</p>
+              {/* Learned findings are hypotheses — an engineer's verdict on them is
+                  what turns this platform into a self-improving one. */}
+              {f.origin === "learned" && <VerdictButtons identityKey={f.identity_key} />}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-[11px] text-ink-3">
                 <span>checked by {f.source_engine}</span>
                 <button

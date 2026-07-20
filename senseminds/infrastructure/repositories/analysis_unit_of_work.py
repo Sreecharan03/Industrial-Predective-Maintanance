@@ -24,6 +24,7 @@ from senseminds.infrastructure.repositories.postgres import (
     PostgresAlertRepository,
     PostgresAssetRepository,
     PostgresEngineRunRepository,
+    PostgresFeedbackRepository,
     PostgresFindingRepository,
     PostgresModelRegistry,
     PostgresReportRepository,
@@ -50,6 +51,7 @@ class AnalysisUnitOfWork:
         self.users = PostgresUserRepository(self._session)
         self.runs = PostgresEngineRunRepository(self._session)
         self.alerts = PostgresAlertRepository(self._session)
+        self.feedback = PostgresFeedbackRepository(self._session)
         # Bound to the SAME session -> the graph projection is part of this txn.
         self.graph = PostgresKnowledgeGraph(session=self._session)
         return self

@@ -145,6 +145,30 @@ export interface Alert {
   sent_at: string | null;
 }
 
+export type Verdict = "confirmed_novelty" | "expected_behaviour" | "false_positive";
+
+export interface Feedback {
+  feedback_id: string;
+  identity_key: string;
+  finding_id: string;
+  unit: string;
+  verdict: Verdict;
+  author: string;
+  note: string;
+  created_at: string;
+}
+
+export interface LabelProgress {
+  labelled_conditions: number;
+  total_verdicts: number;
+  contributors: number;
+  units_covered: number;
+  by_verdict: Record<string, number>;
+  target: number;
+  percent_to_target: number;
+  phase_c_ready: boolean;
+}
+
 export interface ForecastOutlook {
   sensor: string;
   hours_ahead: number;
@@ -232,6 +256,15 @@ export const api = {
   runs: (unit: string) => req<EngineRun[]>(`/runs/${encodeURIComponent(unit)}`),
 
   outlook: (unit: string) => req<Outlook>(`/assets/${encodeURIComponent(unit)}/outlook`),
+
+  feedbackHistory: (identityKey: string) =>
+    req<Feedback[]>(`/findings/${encodeURIComponent(identityKey)}/feedback`),
+  recordFeedback: (identityKey: string, verdict: Verdict, note = "") =>
+    req<Feedback>(`/findings/${encodeURIComponent(identityKey)}/feedback`, {
+      method: "POST",
+      body: JSON.stringify({ verdict, note }),
+    }),
+  labelProgress: () => req<LabelProgress>("/feedback/stats"),
 
   alerts: (limit = 100) => req<Alert[]>(`/alerts?limit=${limit}`),
   unitAlerts: (unit: string, limit = 50) =>

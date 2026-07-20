@@ -25,6 +25,10 @@ class NodeType(StrEnum):
     # Pattern Learning (Phase B) - hypotheses, clearly separable from facts.
     DISCOVERED_PATTERN = "discovered_pattern"
     LEARNED_MODEL = "learned_model"
+    # Human validation of a hypothesis (ADR-016 R2). Its own node type ON PURPOSE:
+    # pattern/condition nodes are re-projected (properties replaced wholesale) on
+    # every Phase-B run, so a verdict written into them would be silently wiped.
+    ENGINEER_VALIDATION = "engineer_validation"
     # Future (ADR-014 §10): FAULT_MECHANISM, FAILURE_MODE, ENGINEERING_RULE,
     # MAINTENANCE_ACTION - not created in this milestone.
 
@@ -40,6 +44,7 @@ class EdgeType(StrEnum):
     SUGGESTS = "suggests"  # LEARNED finding -> discovered pattern
     DISCOVERED_BY = "discovered_by"  # pattern -> learned model
     PRECEDES = "precedes"  # learned temporal/causal sequence (hypothesis)
+    VALIDATED_BY = "validated_by"  # condition -> an engineer's verdict on it
 
 
 class Node(FrozenModel):

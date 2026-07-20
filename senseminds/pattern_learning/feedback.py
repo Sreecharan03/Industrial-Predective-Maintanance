@@ -23,13 +23,23 @@ class FeedbackVerdict(StrEnum):
 
 
 class HumanFeedback(FrozenModel):
-    """An engineer's verdict on a LEARNED finding, keyed by its identity."""
+    """An engineer's verdict on a LEARNED finding, keyed by its identity.
+
+    Keyed on the *identity* rather than a finding_id on purpose: the same
+    condition gets a new finding_id on every observation, but a verdict is about
+    the condition, so it must outlive any single observation of it.
+    """
 
     finding_identity_key: str = Field(min_length=1)
     verdict: FeedbackVerdict
     author: str = Field(min_length=1)
     note: str = ""
     created_at: datetime
+    # Persistence/audit fields. Defaulted so the in-memory port (and anything
+    # constructing feedback without a store) is unaffected.
+    feedback_id: str = ""
+    finding_id: str = ""   # the exact observation the engineer was looking at
+    unit: str = ""
 
 
 class FeedbackRepository(ABC):

@@ -13,6 +13,7 @@ use-cases atomic and rollback-safe.
 from __future__ import annotations
 
 import json
+import uuid
 from collections.abc import Iterable
 from datetime import datetime
 
@@ -23,6 +24,11 @@ from sqlalchemy.orm import Session
 from senseminds.alerting.models import Alert, AlertKind, AlertStatus
 from senseminds.domain.entities import Asset
 from senseminds.findings import Finding
+from senseminds.pattern_learning.feedback import (
+    FeedbackRepository,
+    FeedbackVerdict,
+    HumanFeedback,
+)
 from senseminds.pattern_learning.registry import ModelMetadata, ModelRegistry
 from senseminds.repositories.models import EngineRun, Report, Role, RunStatus, User
 from senseminds.repositories.ports import (
@@ -501,4 +507,117 @@ def _alert(row: object) -> Alert:
         kind=AlertKind(row[4]), severity=row[5], subject=row[6],
         payload=_as_dict(row[7]) if row[7] else {}, status=AlertStatus(row[8]),
         attempts=row[9], last_error=row[10], created_at=row[11], sent_at=row[12],
+    )
+
+
+class PostgresFeedbackRepository(FeedbackRepository):
+    """The label store (ADR-016 R2). Append-only; a changed verdict is a new row.
+
+    Re-submitting the SAME verdict by the SAME author on the same condition is an
+    idempotent no-op - a double-clicked thumbs-up must not fabricate a second
+    label - while an actual change of mind is recorded as a new row so the label
+    history stays auditable.
+    """
+
+    _COLUMNS = ("feedback_id, identity_key, finding_id, unit, verdict, author, "
+                "note, created_at")
+
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def record(self, feedback: HumanFeedback) -> None:
+        latest = self.latest_for(feedback.finding_identity_key, feedback.author)
+        if latest is not None and latest.verdict is feedback.verdict:
+            return  # same verdict, same author -> nothing changed
+        self._s.execute(
+            text(
+                "INSERT INTO application.feedback (feedback_id, identity_key, "
+                "finding_id, unit, verdict, author, note, created_at) "
+                "VALUES (:fid, :idk, :find, :unit, :verdict, :author, :note, :cat) "
+                "ON CONFLICT (feedback_id) DO NOTHING"
+            ),
+            {"fid": feedback.feedback_id or uuid.uuid4().hex,
+             "idk": feedback.finding_identity_key, "find": feedback.finding_id,
+             "unit": feedback.unit, "verdict": feedback.verdict.value,
+             "author": feedback.author, "note": feedback.note,
+             "cat": feedback.created_at},
+        )
+
+    def for_finding(self, identity_key: str) -> list[HumanFeedback]:
+        rows = self._s.execute(
+            text(f"SELECT {self._COLUMNS} FROM application.feedback "
+                 "WHERE identity_key = :idk ORDER BY created_at"),
+            {"idk": identity_key},
+        )
+        return [_feedback(r) for r in rows]
+
+    def all(self) -> list[HumanFeedback]:
+        rows = self._s.execute(
+            text(f"SELECT {self._COLUMNS} FROM application.feedback ORDER BY created_at")
+        )
+        return [_feedback(r) for r in rows]
+
+    def latest_for(self, identity_key: str, author: str) -> HumanFeedback | None:
+        row = self._s.execute(
+            text(f"SELECT {self._COLUMNS} FROM application.feedback "
+                 "WHERE identity_key = :idk AND author = :a "
+                 "ORDER BY created_at DESC LIMIT 1"),
+            {"idk": identity_key, "a": author},
+        ).one_or_none()
+        return _feedback(row) if row else None
+
+    def latest_by_identity(self, unit: str | None = None) -> dict[str, HumanFeedback]:
+        """The current verdict per condition - the newest row wins, whoever wrote it."""
+        clause = "WHERE unit = :unit" if unit else ""
+        rows = self._s.execute(
+            text(f"SELECT DISTINCT ON (identity_key) {self._COLUMNS} "
+                 f"FROM application.feedback {clause} "
+                 "ORDER BY identity_key, created_at DESC"),
+            {"unit": unit} if unit else {},
+        )
+        return {f.finding_identity_key: f for f in (_feedback(r) for r in rows)}
+
+    def recent(self, limit: int = 100, unit: str | None = None) -> list[HumanFeedback]:
+        clause = "WHERE unit = :unit" if unit else ""
+        rows = self._s.execute(
+            text(f"SELECT {self._COLUMNS} FROM application.feedback {clause} "
+                 "ORDER BY created_at DESC LIMIT :lim"),
+            {"lim": limit, **({"unit": unit} if unit else {})},
+        )
+        return [_feedback(r) for r in rows]
+
+    def stats(self) -> dict[str, object]:
+        """Label readiness for Phase C: verdict mix + how many DISTINCT conditions
+        carry a current label (re-labelling the same condition does not move this)."""
+        by_verdict = {
+            row[0]: int(row[1])
+            for row in self._s.execute(
+                text("SELECT verdict, count(*) FROM ("
+                     "  SELECT DISTINCT ON (identity_key) identity_key, verdict "
+                     "  FROM application.feedback ORDER BY identity_key, created_at DESC"
+                     ") latest GROUP BY verdict")
+            )
+        }
+        totals = self._s.execute(
+            text("SELECT count(*), count(DISTINCT identity_key), "
+                 "count(DISTINCT author), count(DISTINCT unit) FROM application.feedback")
+        ).one()
+        return {
+            "labelled_conditions": int(totals[1]),
+            "total_verdicts": int(totals[0]),
+            "contributors": int(totals[2]),
+            "units_covered": int(totals[3]),
+            "by_verdict": by_verdict,
+        }
+
+    def count(self) -> int:
+        return int(self._s.execute(
+            text("SELECT count(*) FROM application.feedback")).scalar_one())
+
+
+def _feedback(row: object) -> HumanFeedback:
+    return HumanFeedback(
+        feedback_id=row[0], finding_identity_key=row[1], finding_id=row[2],
+        unit=row[3], verdict=FeedbackVerdict(row[4]), author=row[5],
+        note=row[6] or "", created_at=row[7],
     )

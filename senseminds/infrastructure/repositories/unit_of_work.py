@@ -12,10 +12,12 @@ from __future__ import annotations
 from types import TracebackType
 
 from senseminds.infrastructure.db import APPLICATION, Database
+from senseminds.infrastructure.graph_store import PostgresKnowledgeGraph
 from senseminds.infrastructure.repositories.postgres import (
     PostgresAlertRepository,
     PostgresAssetRepository,
     PostgresEngineRunRepository,
+    PostgresFeedbackRepository,
     PostgresFindingRepository,
     PostgresModelRegistry,
     PostgresReportRepository,
@@ -40,6 +42,9 @@ class UnitOfWork:
         self.users = PostgresUserRepository(self._session)
         self.runs = PostgresEngineRunRepository(self._session)
         self.alerts = PostgresAlertRepository(self._session)
+        self.feedback = PostgresFeedbackRepository(self._session)
+        # Same session -> a write plus its graph projection commit together.
+        self.graph = PostgresKnowledgeGraph(session=self._session)
         return self
 
     def commit(self) -> None:

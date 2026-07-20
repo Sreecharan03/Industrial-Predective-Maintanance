@@ -22,6 +22,7 @@ from senseminds.api.routers import (
     analysis,
     assets,
     auth,
+    feedback,
     ingest,
     llm,
     ops,
@@ -74,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(ops.router)  # health/ready/metrics at root
     for r in (auth.router, assets.router, telemetry.router, analysis.router,
-              ingest.router, llm.router, alerts.router, outlook.router):
+              ingest.router, llm.router, alerts.router, outlook.router,
+              feedback.router):
         app.include_router(r, prefix=_API_V1)
     return app
