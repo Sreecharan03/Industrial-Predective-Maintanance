@@ -7,9 +7,63 @@ It turns raw sensor history into **deterministic engineering findings**, a
 forecasts**, and finally a **grounded, citation-enforced LLM** that explains all
 of it in plain language — without inventing anything.
 
+When a machine crosses a safety limit it **escalates by email** within seconds,
+and when an engineer judges one of its machine-learning hypotheses, that verdict
+is **captured as a training label** — so the platform gets sharper with use.
+
 Built and validated on **6 real machines** at Laurus Labs (Visakhapatnam):
 `SC-126`, `SC-114`, `SC-104`, `COM-102`, `COM-110`, `COM103 & NP102`
-(≈ **2.86 million sensor readings**).
+(≈ **2.86 million historical sensor readings**; the live stack runs a
+continuous 30-second feed on top of that history).
+
+---
+
+## Why this architecture?
+
+**A traditional platform**
+
+```
+Sensors  →  ML  →  Alarm  →  Engineer
+```
+
+Four steps, and the one making the decision is a black box.
+
+**SenseMinds 360**
+
+```
+Sensors
+   ↓
+Deterministic Analytics     ← physics and specifications
+   ↓
+Findings                    ← immutable, evidence-backed facts
+   ↓
+Knowledge Graph             ← what those facts mean
+   ↓
+Rule Engine                 ← engineering knowledge, multi-signal
+   ↓
+Machine Learning            ← catches what no rule anticipated (advisory)
+   ↓
+Grounded LLM                ← explains, cites, never invents
+   ↓
+Engineer
+```
+
+- **Explainable** — every alarm decomposes into the specific reading, limit and
+  rule that produced it. Not a confidence score.
+- **Auditable** — findings are append-only, enforced by a database trigger. What
+  the platform believed, and when, cannot be rewritten.
+- **Works without labels** — the plant has years of sensor data and *zero*
+  labelled failures. Rules and physics need no training data, so the platform is
+  useful on day one.
+- **ML improves over time** — engineers judge each hypothesis; every verdict
+  becomes a training label.
+- **Every conclusion is traceable** — from the LLM's sentence, to the finding id,
+  to the evidence, to the exact reading.
+
+> In the traditional stack, ML *is* the decision. Here it is the last advisory
+> step before a human — it can suggest, it can never alarm on its own. Delete the
+> entire ML layer and the platform keeps working correctly; it just stops
+> noticing things nobody wrote a rule for.
 
 ---
 
@@ -203,7 +257,19 @@ flowchart LR
 6. **Serve dashboard data** (assets, findings, diagnoses, forecasts, KG subgraph,
    reports).
 7. **Generate reports** (daily asset-health, etc.).
-8. **Run entirely from `docker compose up`.**
+8. **Escalate by email** when a machine crosses a safety limit — one report per
+   machine, a reminder if nobody acts within 30 minutes, and a closing email when
+   it clears. Flapping conditions are recorded but deliberately not emailed.
+9. **Capture engineer verdicts** on learned findings ("was this worth
+   flagging?"), stored as training labels and projected into the knowledge graph.
+10. **Show a forward-looking outlook** per machine — condition score, time before
+    a sensor reaches a limit, and the forecast model that earned its place in
+    backtesting.
+11. **Speak plain English.** The engines write for precision
+    (`42.63% of readings sit in runs of 5+ identical`); the interface says
+    *"About 43% of readings were the same number repeated back to back."* The
+    exact wording stays one click away.
+12. **Run entirely from `docker compose up`.**
 
 ---
 
@@ -224,7 +290,10 @@ flowchart LR
 | **Pattern Learning** (unsupervised novelty / regimes) | **Live in the pipeline** (own slower cadence) | **100%** |
 | **Forecasting** (short-horizon, backtested) | **Live in the pipeline** (own slower cadence) | **100%** |
 | **LLM communication layer** (ADR-018, grounded + cited) | Complete; live Groq validated | **100%** |
-| **REST API** (assets/findings/diagnoses/reports/graph/analyze/llm) | Core complete | **90%** |
+| **REST API** (assets/findings/diagnoses/reports/graph/analyze/llm/alerts/feedback/outlook) | Core complete | **95%** |
+| **Escalation alerting** (outbox, lifecycle, retries, live-verified email) | Complete | **100%** |
+| **Feedback loop** (engineer verdicts → labels → knowledge graph) | Complete | **100%** |
+| **Predictive outlook** (condition + forecast lead time, per machine) | Complete | **100%** |
 | **Auth** (JWT + roles + seed) | Working; no OIDC/refresh/user-mgmt UI | **80%** |
 | **Ingestion worker** (idempotent analysis cycles) | Batch cycles work; live streaming deferred | **85%** |
 | **Docker / deployment** (compose stack) | Runs end-to-end; needs dep pinning + hardening | **90%** |
@@ -233,12 +302,13 @@ flowchart LR
 | **Digital Twin** (3D machine view, live sensor hotspots) | Built for all 6 machines | **90%** |
 | **Live ingestion** (30s simulator + REST push endpoint) | Working; OPC-UA/MQTT adapter still to come | **80%** |
 | **Phase C — supervised learning** | Deferred (needs labeled maintenance events) | **0%** |
-| **Testing** | 226 tests (unit + parity + integration) | **90%** |
+| **Testing** | 231 tests + a 28-case live end-to-end suite | **92%** |
 
-**Overall platform: ~90% of a production-style MVP.**
-The intelligence core, serving layer and dashboard are done; the main remaining
-work is wiring pattern-learning/forecasting into the live run, dependency
-pinning, and (future) streaming + supervised learning.
+**Overall platform: ~94% of a production-style MVP.**
+The intelligence core, serving layer, alerting, feedback loop and dashboard are
+all done and running. The remaining work is deployment hardening (dependency
+pinning, secrets, CORS), streaming ingestion, and — once labels exist —
+supervised learning.
 
 ### Dashboard
 
@@ -543,7 +613,9 @@ senseminds/
 ├── findings/          immutable Finding contract + assembler
 ├── knowledge_graph/   graph model, repository, idempotent projector
 ├── rules/             rule definitions + forward-chaining evaluator
-├── pattern_learning/  unsupervised novelty / regime discovery (Phase B)
+├── alerting/          escalation policy, SMTP mailer, outbox dispatcher
+├── pattern_learning/  unsupervised novelty / regime discovery (Phase B),
+│                      + engineer feedback (label capture)
 ├── forecasting/       pluggable, backtested short-horizon forecasting (Phase B)
 ├── llm/               grounded communication layer (ADR-018): retrieval, prompt,
 │                      citation validator, stub + Groq adapters
@@ -558,33 +630,51 @@ senseminds/
 frontend/              React + Vite + Tailwind dashboard (validated light palette)
   └── src/components/twin/   3D digital twin (three.js, lazy-loaded)
 deployment/            Dockerfile, docker-compose.yml, .env.example
-docs/API-REFERENCE.md  Every endpoint, for frontend developers
-docs/DEPLOYMENT.md     Local, VM and GCP deployment
-docs/architecture/     ADR-001 … ADR-019
-tests/                 226 tests (unit + parity + integration)
+tools/                 diagram generator + markdown→Word converter
+docs/TECHNICAL-WALKTHROUGH.md   architecture, data flow, scenario dry runs
+docs/API-REFERENCE.md           every endpoint, for frontend developers
+docs/DEPLOYMENT.md              local, VM and GCP deployment
+docs/diagrams/                  generated architecture diagrams
+docs/*.docx                     Word versions of the above
+docs/architecture/              ADR-001 … ADR-019
+tests/                          231 tests (unit + parity + integration)
 ```
 
 ---
 
 ## Next steps (roadmap)
 
-**MVP-completing (near term)**
-- **Wire Pattern Learning + Forecasting into the live `AnalysisUseCase`** so
-  novelty/regime/forecast findings persist alongside the deterministic ones.
-- **Pin dependencies** (lockfile) — the Docker image currently installs unpinned
-  newer numpy/scipy/pandas; pin them so deterministic outputs never drift.
-- **API hardening** — pagination, rate limiting, refresh tokens / OIDC.
+**Immediate — hardening before an internet-facing deployment**
+- Replace the development JWT secret and admin password.
+- **Pin dependencies** — the image installs unpinned numpy/scipy/pandas, which
+  can shift numerical results and undermine the reproducibility the platform
+  rests on.
+- Configure CORS for a split-origin deployment.
+- Move artifact storage off the container filesystem.
 
-**Production hardening (recommended)**
-- OpenTelemetry tracing + per-engine metrics; alerting.
-- Artifact/KG retention policies; backup & restore (DR).
+**Near term — validate what already runs**
+- Obtain the plant's **existing breakdown register**. With historical failure
+  dates it becomes possible to check retrospectively whether the novelty and
+  forecasting signals fired before known failures — validating the models
+  already in production *without training anything*. This is the single
+  highest-value input the plant can provide.
+
+**Medium term — close the data loop**
 - Streaming ingestion adapter (OPC-UA / MQTT / historian) behind the existing
   `TimeSeriesSource` / `ReadingSink` seam.
+- Populate maintenance and failure-mode graph nodes from the work-order system.
+- Accumulate engineer verdicts toward the ~200-label threshold at which an
+  alarm-quality model becomes trainable.
+- OpenTelemetry tracing; retention policies; backup and restore.
 
-**Future**
-- **Phase C — supervised learning** (failure prediction / RUL) once labeled
-  maintenance events accumulate. Human feedback on learned findings is already
-  the label-bootstrap store.
+**Longer term — Phase C**
+- Train **and validate** supervised failure classification / RUL — evaluated on
+  held-out *time periods*, required to beat the deterministic baseline, with an
+  agreed false-positive rate. The feedback loop that feeds it is already live.
+
+_Completed since the last revision: pattern learning and forecasting are now
+wired into the live analysis; escalation email, the feedback loop, the
+predictive outlook and the plain-English layer all shipped._
 
 ---
 
@@ -595,5 +685,27 @@ tests/                 226 tests (unit + parity + integration)
 - **The LLM never computes or invents** — grounded, cited, register-aware, and
   free to say "insufficient evidence."
 - **Nothing frozen is changed** without a genuine defect.
+
+---
+
+## Documentation
+
+| Document | For | Format |
+|---|---|---|
+| [`docs/TECHNICAL-WALKTHROUGH.md`](docs/TECHNICAL-WALKTHROUGH.md) | Architecture, one reading traced end-to-end, six scenario dry runs, edge cases, roadmap | md + Word |
+| [`docs/API-REFERENCE.md`](docs/API-REFERENCE.md) | Frontend developers — every endpoint, real payloads, polling guidance | md + Word |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Local, VM, and Cloud Run + Cloud SQL, with a pre-deployment checklist | md + Word |
+| [`docs/architecture/`](docs/architecture/) | ADR-001 … ADR-019 — every decision and its rejected alternatives | md |
+
+Diagrams live in [`docs/diagrams/`](docs/diagrams/) and are **generated** by
+`tools/make_diagrams.py`, so they are rebuilt from the architecture rather than
+drifting from it. Word versions are produced by `tools/md2docx.py` — the markdown
+stays the source of truth:
+
+```bash
+python3 tools/make_diagrams.py
+python3 tools/md2docx.py docs/TECHNICAL-WALKTHROUGH.md \
+  docs/SenseMinds360-Technical-Walkthrough.docx "Technical Walkthrough" "20 July 2026"
+```
 
 _Architecture and rationale: see [`docs/architecture/`](docs/architecture/)._
