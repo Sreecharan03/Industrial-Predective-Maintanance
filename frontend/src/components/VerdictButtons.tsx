@@ -14,21 +14,21 @@ const OPTIONS: { verdict: Verdict; label: string; icon: string; cls: string; hel
     label: "Real",
     icon: "check_circle",
     cls: "text-ok ring-ok-ring hover:bg-ok-soft",
-    help: "Something genuinely was unusual here",
+    help: "Yes — something really was going on",
   },
   {
     verdict: "expected_behaviour",
     label: "Expected",
     icon: "info",
     cls: "text-ink-soft ring-line hover:bg-canvas",
-    help: "Unusual to the model, but normal for this machine",
+    help: "Nothing odd — this machine normally does that",
   },
   {
     verdict: "false_positive",
     label: "Wrong",
     icon: "cancel",
     cls: "text-crit ring-crit-ring hover:bg-crit-soft",
-    help: "The model was mistaken — nothing was happening",
+    help: "No — nothing was happening, this was a false alarm",
   },
 ];
 
@@ -64,7 +64,7 @@ export function VerdictButtons({ identityKey }: { identityKey: string }) {
     <div className="mt-3 rounded-xl border border-line bg-canvas px-3.5 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11px] font-bold tracking-[0.08em] uppercase text-ink-muted">
-          Was this real?
+          Was this worth flagging?
         </p>
         {current && (
           <span className="text-[10.5px] text-ink-muted">
@@ -95,8 +95,8 @@ export function VerdictButtons({ identityKey }: { identityKey: string }) {
       </div>
 
       <p className="mt-2 text-[10.5px] text-ink-muted leading-snug">
-        Your answer is stored as a training label — this is how the system learns which
-        signals are worth raising.
+        Your answer teaches the system which warnings are worth your time. The more you
+        answer, the fewer pointless alerts you get.
       </p>
       {error && <p className="mt-1 text-[10.5px] text-crit">{error}</p>}
     </div>

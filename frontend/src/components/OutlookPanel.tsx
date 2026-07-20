@@ -149,6 +149,13 @@ function MockFailurePrediction({ unit, drivers }: { unit: string; drivers: strin
   );
 }
 
+/** Model names an operator can act on, instead of library names. */
+const MODEL_NAMES: Record<string, string> = {
+  seasonal_naive: "Repeats the recent pattern",
+  ets: "Follows the trend",
+  drift: "Follows the trend",
+};
+
 export default function OutlookPanel({ unit }: { unit: string }) {
   const [data, setData] = useState<Outlook | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -190,15 +197,15 @@ export default function OutlookPanel({ unit }: { unit: string }) {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 px-6 pb-5">
           <Metric
-            label="Condition score"
+            label="Condition now"
             value={condition == null ? "—" : condition.toFixed(1)}
             unit={condition == null ? undefined : "%"}
             tone={conditionTone}
-            hint="Measured now, from readings — not a model estimate."
+            hint="Based on the actual readings, not a guess."
           />
           <div className="sm:text-right">
             <Metric
-              label={data.critical_count > 0 ? "Limits breached" : "Time to limit"}
+              label={data.critical_count > 0 ? "Past safe limits" : "Time before a limit"}
               value={
                 data.critical_count > 0 ? String(data.critical_count)
                   : soonest ? `~${soonest.hours_ahead}` : "None"
@@ -218,18 +225,18 @@ export default function OutlookPanel({ unit }: { unit: string }) {
 
         <div className="border-t border-line px-6 py-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Chip
-            label="Forecast model"
-            value={soonest ? soonest.model_name : "none active"}
+            label="How this was worked out"
+            value={soonest ? MODEL_NAMES[soonest.model_name] ?? soonest.model_name : "—"}
             sub={soonest
-              ? `v${soonest.model_version} · won walk-forward backtest`
-              : "no limit approach projected"}
+              ? "chosen because it predicted this sensor best in testing"
+              : "nothing is heading toward a limit"}
           />
           <Chip
-            label="Confidence"
-            value={soonest ? `${(soonest.interval_confidence * 100).toFixed(0)}% interval` : "—"}
-            sub={soonest && soonest.backtest_mae != null
-              ? `measured backtest MAE ${soonest.backtest_mae.toFixed(4)}`
-              : "measured on held-out folds"}
+            label="How sure"
+            value={soonest ? `${(soonest.interval_confidence * 100).toFixed(0)}% confident` : "—"}
+            sub={soonest
+              ? "measured by testing it against past data"
+              : "nothing to forecast right now"}
           />
         </div>
 
@@ -271,10 +278,10 @@ export default function OutlookPanel({ unit }: { unit: string }) {
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-[10.5px] font-bold tracking-[0.09em] uppercase text-ink-muted">
-                Behaviour vs. its own history
+                Running differently than usual?
               </p>
               <p className="mt-1 text-[15px] font-bold">
-                {novelty.windows} period{novelty.windows !== 1 ? "s" : ""} unlike this machine's norm
+                {novelty.windows} time{novelty.windows !== 1 ? "s" : ""} recently it did not look like its usual self
               </p>
             </div>
             <div className="text-right shrink-0">
@@ -303,7 +310,7 @@ export default function OutlookPanel({ unit }: { unit: string }) {
             </div>
           )}
           <p className="mt-3 text-[11.5px] text-ink-muted">
-            An early signal that behaviour has shifted — not a fault, and not confirmed.
+            An early heads-up that something changed. Not a fault, and not confirmed.
           </p>
         </section>
       )}
@@ -318,7 +325,7 @@ export default function OutlookPanel({ unit }: { unit: string }) {
       {data.forecasts.length > 0 && (
         <section className="card p-5 animate-rise">
           <p className="text-[10.5px] font-bold tracking-[0.09em] uppercase text-ink-muted">
-            All projected limit approaches
+            Everything heading toward a limit
           </p>
           <div className="mt-3 space-y-2">
             {data.forecasts.map((f) => (

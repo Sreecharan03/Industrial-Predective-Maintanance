@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type Alert } from "../lib/api";
-import { plainMeaning } from "../lib/ui";
+import { deJargon, plainMeaning, prettySensor } from "../lib/ui";
 import { Empty, Icon, Spinner } from "../components/ui";
 
 /* What each lifecycle stage / delivery outcome means, in plain English. */
@@ -11,11 +11,11 @@ const KIND: Record<Alert["kind"], { label: string; icon: string; cls: string }> 
 };
 
 const STATUS: Record<Alert["status"], { label: string; hint: string; icon: string; cls: string }> = {
-  sent: { label: "Email sent", hint: "Delivered to the escalation inbox", icon: "mark_email_read", cls: "text-ok" },
-  pending: { label: "Sending…", hint: "Queued — will retry until delivered", icon: "schedule_send", cls: "text-ink-muted" },
-  failed: { label: "Email failed", hint: "Gave up after 5 attempts — check SMTP", icon: "cancel_schedule_send", cls: "text-crit" },
-  suppressed: { label: "Muted (flapping)", hint: "Re-triggered too soon after resolving — recorded, deliberately not emailed", icon: "notifications_paused", cls: "text-ink-muted" },
-  skipped: { label: "No email set up", hint: "Recorded, but SMTP is not configured", icon: "unsubscribe", cls: "text-warn" },
+  sent: { label: "Email sent", hint: "Sent to the on-call inbox", icon: "mark_email_read", cls: "text-ok" },
+  pending: { label: "Sending…", hint: "Waiting to send — it will keep trying", icon: "schedule_send", cls: "text-ink-muted" },
+  failed: { label: "Email failed", hint: "Tried 5 times and could not send — check the email settings", icon: "cancel_schedule_send", cls: "text-crit" },
+  suppressed: { label: "Not emailed", hint: "It kept switching on and off, so we did not send repeat emails. Still recorded here.", icon: "notifications_paused", cls: "text-ink-muted" },
+  skipped: { label: "No email set up", hint: "Recorded here, but no email address is configured yet", icon: "unsubscribe", cls: "text-warn" },
 };
 
 function ago(iso: string): string {
@@ -43,10 +43,11 @@ function AlertCard({ a }: { a: Alert }) {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold truncate">
             {a.payload.display_name ?? a.unit}
-            <span className="text-ink-muted font-medium"> — {a.payload.summary ?? a.subject}</span>
+            <span className="text-ink-muted font-medium">
+              {" — "}{deJargon(a.payload.summary ?? a.subject)}</span>
           </p>
           <p className="mt-0.5 text-[12px] text-ink-muted">
-            {ago(a.created_at)} · {a.payload.target_key ?? a.unit}
+            {ago(a.created_at)} · {prettySensor(a.payload.target_key ?? a.unit)}
           </p>
         </div>
         <span className={`inline-flex items-center gap-1.5 shrink-0 text-xs font-semibold ${status.cls}`}
@@ -64,12 +65,14 @@ function AlertCard({ a }: { a: Alert }) {
               <b>What this means:</b> {meaning}
             </p>
           )}
-          {a.payload.detail && <p className="text-[13px] text-ink-soft">{a.payload.detail}</p>}
+          {a.payload.detail && (
+            <p className="text-[13px] text-ink-soft">{deJargon(a.payload.detail)}</p>
+          )}
           {!!a.payload.evidence?.length && (
             <div className="text-[12px] space-y-1">
               {a.payload.evidence.map((e, i) => (
                 <div key={i} className="flex justify-between gap-4">
-                  <span className="text-ink-muted">{e.description}</span>
+                  <span className="text-ink-muted">{deJargon(e.description)}</span>
                   <span className="font-bold tabular-nums">{e.observed_value ?? "—"}</span>
                 </div>
               ))}
@@ -130,9 +133,9 @@ export default function Alerts() {
           <span className="eyebrow">Escalation</span>
           <h1 className="mt-1 text-2xl lg:text-3xl font-extrabold tracking-tight">Alerts</h1>
           <p className="mt-1 text-sm text-ink-muted max-w-2xl">
-            When a machine crosses a safety limit, an email goes to the escalation inbox —
-            once when it happens, again if nobody deals with it, and once more when it clears.
-            Everything is recorded here, including alerts that were deliberately not emailed.
+            When a machine goes past a safe limit, an email goes out straight away — again if
+            nobody has dealt with it after 30 minutes, and once more when it is back to normal.
+            Everything is listed here, including the ones we chose not to email.
           </p>
         </div>
         <div className="flex flex-col items-end gap-1.5">

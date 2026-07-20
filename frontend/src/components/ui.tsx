@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { Finding, Severity } from "../lib/api";
-import { ORIGIN, SEVERITY, prettySensor, plainMeaning } from "../lib/ui";
+import { ORIGIN, SEVERITY, humanDetail, humanSummary, prettySensor } from "../lib/ui";
 import { VerdictButtons } from "./VerdictButtons";
 
 export function Icon({ name, className = "" }: { name: string; className?: string }) {
@@ -128,7 +128,7 @@ export function HealthRing({ score, size = 92 }: { score: number; size?: number 
 
 export function FindingCard({ f, onCite }: { f: Finding; onCite?: (id: string) => void }) {
   const [open, setOpen] = useState(false);
-  const plain = plainMeaning(f.finding_type);
+  const [tech, setTech] = useState(false);   // the engineering wording, on request
 
   return (
     <article className="card card-hover p-4 animate-rise">
@@ -145,7 +145,7 @@ export function FindingCard({ f, onCite }: { f: Finding; onCite?: (id: string) =
 
           {/* Plain English first — what this actually means. */}
           <p className="mt-2 font-semibold text-[15px] leading-snug">
-            {plain ?? f.summary}
+            {humanSummary(f)}
           </p>
 
           <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted">
@@ -164,8 +164,24 @@ export function FindingCard({ f, onCite }: { f: Finding; onCite?: (id: string) =
 
           {open && (
             <div className="mt-3 rounded-xl bg-canvas border border-line p-3 space-y-2">
-              <p className="text-sm font-medium leading-snug">{f.summary}</p>
-              <p className="text-sm text-ink-soft leading-relaxed">{f.detail}</p>
+              <p className="text-sm text-ink-soft leading-relaxed">{humanDetail(f)}</p>
+
+              {/* The engines' exact wording stays available - simplified for
+                  reading, never hidden from anyone who wants the precise text. */}
+              <button
+                onClick={() => setTech((t) => !t)}
+                className="text-[11px] font-medium text-ink-muted hover:text-brand-600
+                           inline-flex items-center gap-1 transition-colors"
+              >
+                <Icon name={tech ? "unfold_less" : "unfold_more"} className="text-[13px]" />
+                {tech ? "Hide the technical version" : "Show the technical version"}
+              </button>
+              {tech && (
+                <div className="rounded-lg bg-card border border-line px-3 py-2 space-y-1">
+                  <p className="text-[12px] font-medium leading-snug">{f.summary}</p>
+                  <p className="text-[12px] text-ink-muted leading-relaxed">{f.detail}</p>
+                </div>
+              )}
               {/* Learned findings are hypotheses — an engineer's verdict on them is
                   what turns this platform into a self-improving one. */}
               {f.origin === "learned" && <VerdictButtons identityKey={f.identity_key} />}
