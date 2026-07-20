@@ -7,6 +7,7 @@ bold / `code` / [links].
 
 from __future__ import annotations
 
+import pathlib
 import re
 import sys
 
@@ -78,6 +79,27 @@ def add_inline(paragraph, text, *, base_size=10.5, bold=False, color=None):
         r.font.size = Pt(base_size)
         if color is not None and not (part.startswith("`")):
             r.font.color.rgb = color
+
+
+def _consume_item(lines, i):
+    """Join a list item's wrapped continuation lines into one logical line.
+
+    Without this, a bold span or link that happens to wrap across two source
+    lines is split into two paragraphs and renders as literal ** markers."""
+    parts = [lines[i].strip()]
+    i += 1
+    while i < len(lines):
+        nxt = lines[i]
+        stripped = nxt.strip()
+        if (not stripped or stripped.startswith(("#", "|", "```", ">", "-", "*", "!["))
+                or re.match(r"^\d+\.\s", stripped) or stripped in ("---", "***")):
+            break
+        if not nxt.startswith((" ", "\t")) and len(parts) == 1:
+            # unindented wrap is still part of the item
+            pass
+        parts.append(stripped)
+        i += 1
+    return " ".join(parts), i
 
 
 def build(md_path: str, out_path: str, title: str, subtitle: str) -> None:
@@ -188,6 +210,24 @@ def build(md_path: str, out_path: str, title: str, subtitle: str) -> None:
             doc.add_paragraph()
             continue
 
+        # image:  ![caption](path)
+        m = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)\s*$", stripped)
+        if m:
+            caption, src = m.group(1), m.group(2)
+            path = (pathlib.Path(md_path).parent / src).resolve()
+            if path.exists():
+                doc.add_picture(str(path), width=Inches(6.3))
+                doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                if caption:
+                    cap = doc.add_paragraph()
+                    cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    r = cap.add_run(caption)
+                    r.italic = True
+                    r.font.size = Pt(9)
+                    r.font.color.rgb = MUTED
+            i += 1
+            continue
+
         # headings
         m = re.match(r"^(#{1,4})\s+(.*)$", stripped)
         if m:
@@ -229,25 +269,25 @@ def build(md_path: str, out_path: str, title: str, subtitle: str) -> None:
         # checkbox list
         m = re.match(r"^-\s+\[([ xX])\]\s+(.*)$", stripped)
         if m:
+            text, i = _consume_item(lines, i)
+            body = re.match(r"^-\s+\[[ xX]\]\s+(.*)$", text).group(1)
             p = doc.add_paragraph(style="List Bullet")
-            box = "☒ " if m.group(1).lower() == "x" else "☐ "
-            p.add_run(box).font.size = Pt(11)
-            add_inline(p, m.group(2))
-            i += 1
+            p.add_run("☒ " if m.group(1).lower() == "x" else "☐ ").font.size = Pt(11)
+            add_inline(p, body)
             continue
 
         # bullet
         if re.match(r"^[-*]\s+", stripped):
+            text, i = _consume_item(lines, i)
             p = doc.add_paragraph(style="List Bullet")
-            add_inline(p, re.sub(r"^[-*]\s+", "", stripped))
-            i += 1
+            add_inline(p, re.sub(r"^[-*]\s+", "", text))
             continue
 
         # numbered
         if re.match(r"^\d+\.\s+", stripped):
+            text, i = _consume_item(lines, i)
             p = doc.add_paragraph(style="List Number")
-            add_inline(p, re.sub(r"^\d+\.\s+", "", stripped))
-            i += 1
+            add_inline(p, re.sub(r"^\d+\.\s+", "", text))
             continue
 
         # blank
