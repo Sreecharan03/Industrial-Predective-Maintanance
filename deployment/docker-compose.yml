@@ -13,6 +13,14 @@ x-app-env: &app-env
   SENSEMINDS_DEFAULT_ADMIN_PASSWORD: ${SENSEMINDS_DEFAULT_ADMIN_PASSWORD:-admin}
   SENSEMINDS_GROQ_API_KEY: ${SENSEMINDS_GROQ_API_KEY:-}
   SENSEMINDS_LLM_MODEL: ${SENSEMINDS_LLM_MODEL:-llama-3.3-70b-versatile}
+  # HTTP / CORS — comma-separated exact origins for the browser dashboard.
+  SENSEMINDS_CORS_ALLOW_ORIGINS: ${SENSEMINDS_CORS_ALLOW_ORIGINS:-}
+  # Database connection resilience (SQLAlchemy pooling; not custom retry).
+  SENSEMINDS_DB_POOL_SIZE: ${SENSEMINDS_DB_POOL_SIZE:-5}
+  SENSEMINDS_DB_MAX_OVERFLOW: ${SENSEMINDS_DB_MAX_OVERFLOW:-10}
+  SENSEMINDS_DB_POOL_RECYCLE_SECONDS: ${SENSEMINDS_DB_POOL_RECYCLE_SECONDS:-1800}
+  # Artifact storage backend (local_disk = VM persistent disk).
+  SENSEMINDS_ARTIFACT_BACKEND: ${SENSEMINDS_ARTIFACT_BACKEND:-local_disk}
   # Escalation email (values live in the gitignored .env; empty = alerts are
   # still recorded, just marked 'skipped' instead of emailed).
   SENSEMINDS_SMTP_HOST: ${SENSEMINDS_SMTP_HOST:-}
@@ -29,7 +37,12 @@ x-app-env: &app-env
 services:
   postgres:
     restart: unless-stopped
-    image: timescale/timescaledb:latest-pg16
+    # Pinned by digest, not a floating tag. A drifting `latest-pg16` let the
+    # TimescaleDB binary (2.28.3) run ahead of the stored extension (2.28.2),
+    # which silently broke logical restore (DROP/CREATE EXTENSION spans versions).
+    # Pinning keeps binary and extension in lockstep — the same reproducibility
+    # discipline as requirements.lock, applied to the database image.
+    image: timescale/timescaledb:latest-pg16@sha256:61f891691050da6032023c01ea885730eeeba06b7c17b403e7d0b9c49c37dfe9
     environment:
       POSTGRES_USER: senseminds
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-senseminds}

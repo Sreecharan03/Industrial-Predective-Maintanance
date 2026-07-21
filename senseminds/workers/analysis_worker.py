@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from senseminds.alerting import build_alerting
 from senseminds.application.analysis_use_case import AnalysisRunResult, AnalysisUseCase
 from senseminds.config import Settings, get_settings
-from senseminds.infrastructure.artifact_store.local import LocalArtifactStore
+from senseminds.infrastructure.artifact_store import build_artifact_store
 from senseminds.infrastructure.db import build_database
 from senseminds.infrastructure.logging import configure_logging, get_logger
 from senseminds.ingestion import DbTimeSeriesSource, TimeSeriesSource
@@ -78,7 +78,7 @@ def main(settings: Settings | None = None) -> None:  # pragma: no cover - entryp
     source = DbTimeSeriesSource(db)
     policy, dispatcher = build_alerting(db, settings)
     use_case = AnalysisUseCase(
-        db, LocalArtifactStore(settings.artifact_root), source,
+        db, build_artifact_store(settings), source,
         learning_enabled=settings.learning_enabled,
         learning_interval_minutes=settings.learning_interval_minutes,
         alert_policy=policy, alert_dispatcher=dispatcher,

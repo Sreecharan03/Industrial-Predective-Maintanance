@@ -1,0 +1,37 @@
+# SenseMinds 360 — GCP single-VM overlay (Deployment Strategy v1, Single Plant).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gcp.yml \
+#       --profile batch up -d --build
+#
+# Design notes:
+#   * The base compose already routes ALL durable state (Postgres data, artifacts,
+#     datasets) through ${SM_DATA}. Point that at the persistent disk by setting
+#     SM_DATA=/mnt/data in deployment/.env — no volume redefinition needed here
+#     (Compose CONCATENATES volume lists on merge, which would double-mount).
+#   * Containers are stateless; the persistent disk is the source of truth and
+#     survives every container and VM restart.
+#   * `--profile batch` runs the real analysis worker, so new readings are
+#     actually processed. The API alone only serves already-computed state.
+#   * The API and dashboard keep their container ports, but the GCP firewall
+#     exposes only 80/443/22 (see provision-vm.sh), so Caddy is the only public
+#     entry point and terminates TLS.
+
+services:
+  # TLS termination + reverse proxy. Reaches api/dashboard over the internal
+  # docker network by service name, so it needs no host-port changes on them.
+  # Automatic HTTPS via Let's Encrypt when a real domain resolves to the VM;
+  # an internal self-signed cert otherwise.
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    depends_on:
+      api: { condition: service_started }
+      dashboard: { condition: service_started }
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${SM_DATA:-/mnt/data}/caddy/data:/data
+      - ${SM_DATA:-/mnt/data}/caddy/config:/config
+    networks: [smnet]

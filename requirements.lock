@@ -1,0 +1,42 @@
+# SenseMinds 360 — pinned runtime dependencies (Deployment Strategy v1).
+#
+# WHY THIS FILE EXISTS
+# The platform's core guarantee is byte-for-byte reproducible engine output. An
+# unpinned rebuild that pulls a newer numpy/scipy/scikit-learn can silently shift
+# floating-point results and break that guarantee. These are the exact versions
+# the 231-test suite (including the CSV-vs-DB byte-parity checks) passes against,
+# so the Docker image is built from THIS file, not from the open >= ranges in
+# pyproject.toml.
+#
+# The four scientific libraries are the ones that actually determine numerical
+# output; the rest are framework/runtime and pinned for a reproducible build.
+#
+# Regenerate after an intentional, re-validated upgrade:
+#   docker exec <api-container> pip freeze > requirements.freeze   # full transitive set
+#   then update the versions below and re-run the full test suite.
+
+# --- numerically critical: pin exactly, never float ---
+numpy==1.26.4
+scipy==1.11.4
+scikit-learn==1.3.2
+pandas==2.1.4
+joblib==1.5.3
+threadpoolctl==3.6.0
+
+# --- web / API framework ---
+fastapi==0.138.1
+uvicorn==0.49.0
+python-multipart==0.0.32
+
+# --- data models / settings ---
+pydantic==2.13.4
+pydantic-settings==2.14.2
+
+# --- database ---
+sqlalchemy==2.0.51
+alembic==1.18.5
+psycopg[binary]==3.3.4
+
+# --- auth / http client ---
+python-jose[cryptography]==3.5.0
+httpx==0.28.1

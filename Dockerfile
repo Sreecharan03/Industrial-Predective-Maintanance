@@ -7,10 +7,16 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies (and the package) from the project metadata.
+# Install PINNED dependencies first (reproducible layer, changes rarely), then
+# the package itself with deps already satisfied. Building from requirements.lock
+# rather than pyproject's open ranges is what protects the reproducible-output
+# guarantee — a rebuild cannot silently pull a newer numpy/scipy/scikit-learn.
+COPY requirements.lock ./
+RUN pip install --no-cache-dir -r requirements.lock
+
 COPY pyproject.toml ./
 COPY senseminds ./senseminds
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir --no-deps .
 
 # Run from source so the Alembic migration scripts (non-package files) are present.
 ENV PYTHONPATH=/app \

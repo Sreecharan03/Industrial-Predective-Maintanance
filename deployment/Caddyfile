@@ -1,0 +1,37 @@
+# SenseMinds 360 — reverse proxy + automatic TLS (Deployment Strategy v1).
+#
+# Replace the site address below with your domain to get an automatic
+# Let's Encrypt certificate. With a bare IP (no domain), Caddy serves an internal
+# self-signed cert — usable, but browsers will warn; a real domain is recommended.
+#
+#   {$SITE_ADDRESS} is read from the environment (set SITE_ADDRESS in .env),
+#   defaulting to :443 with Caddy's internal CA when unset.
+
+{$SITE_ADDRESS::443} {
+	# Dashboard (static SPA) is the default site.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle /health {
+		reverse_proxy api:8000
+	}
+	handle /ready {
+		reverse_proxy api:8000
+	}
+
+	# /metrics is intentionally NOT proxied publicly. Scrape it from inside the
+	# VM (localhost) or a private network; exposing finding/run counts to the
+	# internet is an information leak. Uncomment only behind an authenticated proxy.
+	# handle /metrics { reverse_proxy api:8000 }
+
+	handle {
+		reverse_proxy dashboard:80
+	}
+
+	encode gzip
+
+	log {
+		output stdout
+		format json
+	}
+}

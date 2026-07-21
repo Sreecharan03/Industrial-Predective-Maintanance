@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 
 from senseminds import __version__
 from senseminds.api.deps import build_state
@@ -58,6 +59,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         summary="Industrial Intelligence Platform",
         lifespan=lifespan,
     )
+
+    # CORS: a browser dashboard served from a different origin is blocked without
+    # this. Origins are explicit and config-driven (SENSEMINDS_CORS_ALLOW_ORIGINS);
+    # an empty list adds no CORS headers, keeping same-origin deployments locked down.
+    origins = settings.cors_origins
+    if origins:
+        # Browsers reject the wildcard combined with credentials; that pairing is
+        # only valid for a dev-time "*", so credentials are disabled in that case.
+        wildcard = origins == ["*"]
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=not wildcard,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        log.info("cors_enabled", extra={"origins": origins})
+
     @app.middleware("http")
     async def _log_requests(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]

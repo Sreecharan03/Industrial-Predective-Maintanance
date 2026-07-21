@@ -1,5 +1,10 @@
 # SenseMinds 360 — Deployment Guide
 
+> **Read [`DEPLOYMENT-STRATEGY-V1.md`](DEPLOYMENT-STRATEGY-V1.md) first** — it is the
+> current target architecture (Single Plant, GCE VM + persistent disk) and explains
+> *why*. This guide is the step-by-step command reference. Data durability, backups
+> and recovery are in [`DATA-GOVERNANCE.md`](DATA-GOVERNANCE.md).
+
 Covers local/VM deployment with Docker Compose, and production deployment on GCP.
 
 ---
@@ -87,20 +92,16 @@ persists in `senseminds-data/`.
 
 Before any internet-facing deployment:
 
-- [ ] **`SENSEMINDS_JWT_SECRET` changed** from `dev-insecure-change-me`.
-      Anyone who knows the default can forge an admin token.
-- [ ] **`SENSEMINDS_DEFAULT_ADMIN_PASSWORD` changed** from `admin`.
-- [ ] **Dependencies pinned.** `pyproject.toml` currently uses `>=` ranges, so a
-      rebuild can pull newer numpy/scipy/pandas than were tested. The platform's
-      core guarantee is reproducible engine output — pin exact versions
-      (`pip freeze` from a known-good container) before relying on that guarantee.
-- [ ] **CORS configured** if the dashboard is served from a different origin than
-      the API. Not currently configured; same-origin nginx proxying hides this
-      locally, but a split deployment will fail in the browser until it is added.
-- [ ] **Artifact storage is durable** (see §5).
-- [ ] **Database backups enabled** (automatic with Cloud SQL).
-- [ ] **`sim` profile not running.**
-- [ ] TLS terminated (automatic on Cloud Run; needs a load balancer on a raw VM).
+- [x] **Dependencies pinned** — the image builds from `requirements.lock`, and the
+      Postgres image is pinned by digest. (Done — see DEPLOYMENT-STRATEGY-V1.md §5.)
+- [x] **CORS configurable** — `SENSEMINDS_CORS_ALLOW_ORIGINS`, exact origins.
+- [x] **Artifact storage durable** — `LocalDiskArtifactStore` on the persistent
+      disk; `ArtifactStore` port ready for GCS later.
+- [x] **Database backups + tested restore** — see DATA-GOVERNANCE.md.
+- [ ] **`sim` profile not running** — run `--profile batch` (the real worker).
+- [ ] **TLS terminated** — Caddy on the v1 VM (automatic on Cloud Run).
+- [ ] **`SENSEMINDS_JWT_SECRET` and `SENSEMINDS_DEFAULT_ADMIN_PASSWORD` changed.**
+      Deliberately deprioritised for v1; still required before public exposure.
 
 ---
 
@@ -120,7 +121,13 @@ Three things must survive a restart:
 
 ## 6. GCP deployment
 
-### 6.1 Recommended architecture
+> **v1 is the GCE VM + persistent disk** (DEPLOYMENT-STRATEGY-V1.md, and §7 below).
+> The Cloud Run + Cloud SQL shape shown here is a *future* option for a managed,
+> multi-plant deployment — kept for reference. It requires resolving the
+> TimescaleDB-on-Cloud-SQL constraint noted below; v1 sidesteps it entirely by
+> running TimescaleDB on the VM.
+
+### 6.1 Future managed architecture (reference)
 
 ```
               ┌──────────────────────────┐

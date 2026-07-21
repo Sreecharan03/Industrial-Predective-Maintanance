@@ -16,7 +16,7 @@ from senseminds.alerting import build_alerting
 from senseminds.api.security import decode_access_token
 from senseminds.application.analysis_use_case import AnalysisUseCase
 from senseminds.config import Settings
-from senseminds.infrastructure.artifact_store.local import LocalArtifactStore
+from senseminds.infrastructure.artifact_store import build_artifact_store
 from senseminds.infrastructure.db import Database, build_database
 from senseminds.ingestion import DbTimeSeriesSource
 from senseminds.llm import EvidenceRetriever, LlmQueryService, build_language_model
@@ -37,7 +37,7 @@ class AppState:
 
 def build_state(settings: Settings) -> AppState:
     db = build_database(settings)
-    store = LocalArtifactStore(settings.artifact_root)
+    store = build_artifact_store(settings)
     policy, dispatcher = build_alerting(db, settings)
     analysis = AnalysisUseCase(
         db, store, DbTimeSeriesSource(db),

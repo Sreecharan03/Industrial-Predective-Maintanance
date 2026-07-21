@@ -27,9 +27,23 @@ from senseminds.infrastructure.db.schema import (
 class Database:
     """Owns a SQLAlchemy engine + session factory per logical store."""
 
-    def __init__(self, urls: dict[StoreSchema, str]) -> None:
+    def __init__(self, urls: dict[StoreSchema, str], *, pool_recycle_seconds: int = 1800,
+                 pool_size: int = 5, max_overflow: int = 10) -> None:
+        # Resilience is SQLAlchemy's own, not custom retry logic (deployment
+        # refinement): pool_pre_ping issues a lightweight liveness check and
+        # transparently replaces a connection the database dropped (e.g. after a
+        # DB restart), so callers never see a stale-connection error. pool_recycle
+        # proactively retires connections before a server/idle timeout can. These
+        # cover transient connection loss; anything beyond that is a real fault
+        # and should surface, not be silently retried.
         self._engines: dict[StoreSchema, Engine] = {
-            schema: create_engine(url, future=True, pool_pre_ping=True)
+            schema: create_engine(
+                url, future=True,
+                pool_pre_ping=True,
+                pool_recycle=pool_recycle_seconds,
+                pool_size=pool_size,
+                max_overflow=max_overflow,
+            )
             for schema, url in urls.items()
         }
         self._factories: dict[StoreSchema, sessionmaker[Session]] = {
@@ -69,4 +83,9 @@ def build_database(settings: Settings) -> Database:
         KNOWLEDGE: settings.knowledge_url or base,
         APPLICATION: settings.application_url or base,
     }
-    return Database(urls)
+    return Database(
+        urls,
+        pool_recycle_seconds=settings.db_pool_recycle_seconds,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+    )

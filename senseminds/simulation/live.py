@@ -23,7 +23,7 @@ from sqlalchemy import text
 from senseminds.alerting import build_alerting
 from senseminds.application.analysis_use_case import AnalysisUseCase
 from senseminds.config import get_settings
-from senseminds.infrastructure.artifact_store.local import LocalArtifactStore
+from senseminds.infrastructure.artifact_store import LocalDiskArtifactStore
 from senseminds.infrastructure.db import APPLICATION, KNOWLEDGE, SENSOR_HISTORY, Database
 from senseminds.infrastructure.logging import get_logger
 from senseminds.ingestion import (
@@ -61,7 +61,7 @@ class LiveSimulator:
         self._sensors = UnitSensorCatalog(db)
         policy, dispatcher = build_alerting(db, get_settings())
         self._analysis = AnalysisUseCase(
-            db, LocalArtifactStore(cfg.artifact_root), DbTimeSeriesSource(db),
+            db, LocalDiskArtifactStore(cfg.artifact_root), DbTimeSeriesSource(db),
             learning_enabled=cfg.learning_enabled,
             learning_interval_minutes=cfg.learning_interval_minutes,
             alert_policy=policy, alert_dispatcher=dispatcher,

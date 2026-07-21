@@ -83,6 +83,30 @@ class Settings(BaseSettings):
         default="admin", description="Seed admin password (change in every real deployment)."
     )
 
+    # HTTP serving. A browser UI on a different origin is blocked without CORS.
+    # Comma-separated exact origins; empty = same-origin only (no CORS headers).
+    # "*" is accepted for local development but must not be used with credentials.
+    cors_allow_origins: str = Field(
+        default="",
+        description="Comma-separated allowed browser origins for CORS; empty disables it.",
+    )
+
+    # Database connection resilience (deployment). SQLAlchemy's own pooling, not
+    # custom retry: pre_ping replaces dropped connections, recycle retires old ones.
+    db_pool_size: int = Field(default=5, description="Persistent connections per store.")
+    db_max_overflow: int = Field(default=10, description="Extra burst connections per store.")
+    db_pool_recycle_seconds: int = Field(
+        default=1800, description="Retire a pooled connection after this many seconds."
+    )
+
+    # Artifact storage backend (ADR-019). The application depends only on the
+    # ArtifactStore port; this selects the implementation at the composition root.
+    # 'local_disk' now (VM persistent disk); 'gcs' can be added later without any
+    # change to business logic.
+    artifact_backend: str = Field(
+        default="local_disk", description="Artifact store implementation: local_disk | gcs."
+    )
+
     # Ingestion / analysis worker.
     worker_interval_seconds: int = Field(
         default=300, description="Seconds between analysis cycles over all units."
@@ -158,6 +182,20 @@ class Settings(BaseSettings):
         if lower not in allowed:
             raise ValueError(f"environment must be one of {sorted(allowed)}, got {value!r}")
         return lower
+
+    @field_validator("artifact_backend")
+    @classmethod
+    def _valid_artifact_backend(cls, value: str) -> str:
+        allowed = {"local_disk", "gcs"}
+        lower = value.lower()
+        if lower not in allowed:
+            raise ValueError(f"artifact_backend must be one of {sorted(allowed)}, got {value!r}")
+        return lower
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Parsed CORS origins; empty list means no cross-origin access."""
+        return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
 
 
 @lru_cache(maxsize=1)

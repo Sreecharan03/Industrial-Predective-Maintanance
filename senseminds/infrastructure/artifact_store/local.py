@@ -1,10 +1,15 @@
-"""Local filesystem artifact store.
+"""Local-disk artifact store.
 
 Persists each typed engine result as a JSON document under
 ``<root>/<ResultType>/<artifact_id>.json``. Writes are atomic (temp file +
 rename) so a crashed or concurrent write can never leave a half-written
-artifact that a reader might load. Suitable for single-node/studio use;
-swappable for object storage or a DB behind ``ArtifactStore`` later.
+artifact that a reader might load.
+
+In the v1 single-plant deployment ``root`` is a directory on the VM's
+**persistent disk**, so artifacts outlive the container (the container is
+stateless; the disk is the source of truth). The application depends only on
+the ``ArtifactStore`` port, so a ``GcsArtifactStore`` can replace this later
+without any change to business logic.
 """
 
 from __future__ import annotations
@@ -24,8 +29,8 @@ from senseminds.infrastructure.logging import get_logger
 _log = get_logger(__name__)
 
 
-class LocalArtifactStore(ArtifactStore):
-    """Filesystem-backed artifact store rooted at a directory."""
+class LocalDiskArtifactStore(ArtifactStore):
+    """Disk-backed artifact store rooted at a directory (a persistent disk in prod)."""
 
     def __init__(self, root: Path) -> None:
         self._root = Path(root)
@@ -88,3 +93,7 @@ class LocalArtifactStore(ArtifactStore):
             if type_dir.is_dir():
                 ids.extend(p.stem for p in type_dir.glob("*.json"))
         return sorted(ids)
+
+
+# Backwards-compatible alias for the pre-rename name.
+LocalArtifactStore = LocalDiskArtifactStore
