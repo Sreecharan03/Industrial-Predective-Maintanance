@@ -1,13 +1,30 @@
 # SenseMinds 360 — Backend API Reference
 
-**For frontend developers.** Every endpoint below is live; every example response
-was captured from the running system, not written by hand.
+**For the frontend engineer building a custom UI.** Every endpoint below is live on
+the deployed server; every example response is a real shape from the running system,
+not hand-written.
 
-- Base URL: `{HOST}/api/v1` (ops endpoints are at the root, not under `/api/v1`)
-- Format: JSON in, JSON out. `Content-Type: application/json` on every POST with a body
-  — **except** `/auth/token`, which is form-encoded (OAuth2 standard).
-- Interactive spec: **`{HOST}/docs`** (Swagger UI) and **`{HOST}/openapi.json`**.
-  These are generated from the code, so they are never out of date.
+### Live server
+
+```
+Base URL:        http://35.254.19.129:8000
+API prefix:      http://35.254.19.129:8000/api/v1
+Interactive docs: http://35.254.19.129:8000/docs      (try every endpoint in the browser)
+Raw spec:         http://35.254.19.129:8000/openapi.json
+```
+
+Ops endpoints (`/health`, `/ready`, `/metrics`) are at the root; everything else is
+under `/api/v1`. Throughout this document `{BASE}` means `http://35.254.19.129:8000`.
+
+- **Format:** JSON in, JSON out. `Content-Type: application/json` on every POST with a
+  body — **except** `/auth/token`, which is form-encoded (OAuth2 standard).
+- **Auth:** all `/api/v1` endpoints except `/auth/token` require a Bearer token (§1).
+- **The `/docs` page is the fastest reference** — it is generated from the code, is
+  never out of date, and lets you call any endpoint live (click Authorize, paste a
+  token, "Try it out").
+
+> If you are building the UI, jump to **§12 — Building the frontend**: it maps each
+> screen to the exact endpoints that power it, in a sensible build order.
 
 ---
 
@@ -381,7 +398,91 @@ Uncited claims are dropped by the backend before you ever see them.
 
 ---
 
-## 8. Analysis and audit
+## 8. Feedback — the learning loop
+
+Engineers judge the platform's machine-learning findings ("was this worth
+flagging?"). Each verdict is stored as a training label and folded into the
+knowledge graph. **Only `learned`-origin findings accept a verdict** — a measured
+fact is not a prediction to confirm.
+
+Verdicts key on **`identity_key`** (the stable condition id), not `finding_id`, so a
+label survives later observations of the same condition.
+
+Three verdict values:
+
+| Value | Meaning (what to show the user) |
+|---|---|
+| `confirmed_novelty` | "Real — something genuinely unusual" |
+| `expected_behaviour` | "Expected — normal for this machine" |
+| `false_positive` | "Wrong — nothing was happening" |
+
+### `POST /api/v1/findings/{identity_key}/feedback` — record a verdict
+
+Body:
+```json
+{ "verdict": "confirmed_novelty", "note": "checked on site, bearing noise" }
+```
+
+`note` is optional (≤ 2000 chars). The **author is taken from the token**, never the
+body. Returns `201`:
+
+```json
+{
+  "feedback_id": "0f3a…",
+  "identity_key": "570ffdfb43fc8eee",
+  "finding_id": "4efff651b2e1b571",
+  "unit": "SC-126",
+  "verdict": "confirmed_novelty",
+  "author": "admin",
+  "note": "checked on site, bearing noise",
+  "created_at": "2026-07-22T09:12:44+00:00"
+}
+```
+
+Errors the UI must handle:
+
+| Status | When | Show |
+|---|---|---|
+| `400` | finding is `derived`/`diagnosed`, not `learned` | "Only early-signal findings can be rated" — hide the buttons for non-learned findings |
+| `404` | unknown `identity_key` | — |
+| `422` | invalid verdict value or note too long | fix input |
+
+Re-sending the **same** verdict is a no-op (idempotent); a **changed** verdict appends
+a new row (full history kept).
+
+### `GET /api/v1/findings/{identity_key}/feedback` — verdict history
+
+Array of the above shape, oldest first — includes disagreements between engineers.
+Use the **last** entry as the current verdict.
+
+### `GET /api/v1/feedback?limit=100` — recent verdicts (all machines)
+### `GET /api/v1/assets/{unit}/feedback?limit=100` — recent verdicts (one machine)
+
+`limit` 1–500, default 100, newest first. Same object shape.
+
+### `GET /api/v1/feedback/stats` — label-readiness progress
+
+For a "how close are we to training the next model" widget:
+
+```json
+{
+  "labelled_conditions": 2,
+  "total_verdicts": 3,
+  "contributors": 1,
+  "units_covered": 1,
+  "by_verdict": { "confirmed_novelty": 1, "false_positive": 1 },
+  "target": 200,
+  "percent_to_target": 1.0,
+  "phase_c_ready": false
+}
+```
+
+`labelled_conditions` counts **distinct** conditions (re-labelling one doesn't
+inflate it). `phase_c_ready` is honestly `false` until `target` is reached.
+
+---
+
+## 9. Analysis and audit
 
 ### `POST /api/v1/analyze` — trigger an analysis run
 
@@ -406,7 +507,7 @@ For integrations, not the dashboard.
 
 ---
 
-## 9. Knowledge graph
+## 10. Knowledge graph
 
 ### `GET /api/v1/assets/{unit}/graph`
 
@@ -420,7 +521,7 @@ For integrations, not the dashboard.
 
 ---
 
-## 10. Ops endpoints (no auth, root path)
+## 11. Ops endpoints (no auth, root path)
 
 | Endpoint | Use |
 |---|---|
@@ -438,7 +539,7 @@ senseminds_kg_nodes_total 3021
 
 ---
 
-## 11. Frontend integration notes
+## 12. Frontend integration notes
 
 **Polling cadence.** The backend analyses every 30 s. Match it — faster is wasted work:
 
@@ -467,3 +568,75 @@ evidence behind it. `evidence[]` on findings, `citations[]` on Copilot claims, a
 **Learned ≠ fact.** `origin: "learned"` findings, `novelty`, and `forecasts` are
 advisory hypotheses. Never render them with the same weight as measured facts — the
 backend deliberately never alarms on them alone.
+
+---
+
+## 13. Building the frontend — screen → endpoint map
+
+A suggested build order. Each screen lists exactly the calls that power it.
+
+### Step 0 — Auth shell (build first)
+- On load: read stored token → `GET /auth/me`. On `401`, show login.
+- Login form → `POST /auth/token` (form-encoded) → store `access_token`.
+- Attach `Authorization: Bearer <token>` to every request; on any `401`, clear and
+  return to login.
+
+### Step 1 — Fleet overview (landing page)
+- `GET /assets` → one card per machine.
+- For a health/severity roll-up per card, either call
+  `GET /assets/{unit}/findings` per machine, or show counts lazily.
+- Poll every 30 s.
+
+### Step 2 — Machine detail (the core screen)
+One machine, tabbed. Fetch per tab:
+
+| Tab | Endpoint |
+|---|---|
+| **Overview / Issues** | `GET /assets/{unit}` + `GET /assets/{unit}/findings` |
+| **Outlook** | `GET /assets/{unit}/outlook` |
+| **Sensors** | `GET /assets/{unit}/telemetry?hours=6&points=90` |
+| **Diagnoses** | `GET /assets/{unit}/diagnoses` |
+| **Alerts** | `GET /assets/{unit}/alerts` |
+| **Connections** (graph) | `GET /assets/{unit}/graph` *(on open only — large)* |
+| **Reports** | `GET /assets/{unit}/reports` *(on open only)* |
+| **Check history** | `GET /runs/{unit}` *(on open only)* |
+
+Rendering rules that matter:
+- Colour by `severity`. Show `evidence[]` under every finding.
+- Tag findings by `origin` — style `learned` as an advisory "early signal", never a fact.
+- On `learned` findings, show the **feedback buttons** (§8) and hide them on
+  `derived`/`diagnosed`.
+
+### Step 3 — Alerts page (all machines)
+- `GET /alerts?limit=200`, poll 30 s.
+- Group/label by `kind` (triggered / reminder / resolved) and `status`
+  (sent / pending / failed / suppressed / skipped) — see §6 for the UI mapping.
+- Render from `payload` (it is frozen at decision time); don't re-fetch the finding.
+- Admin only: a "send test email" button → `POST /alerts/test`.
+
+### Step 4 — Copilot
+- `POST /llm/query` with `{ unit, question, persona, history }`.
+- Render `claims[]` with clickable `citations` (each is a `finding_id`).
+- Show `insufficient[]`. If `model` is `deterministic_stub`, show an "offline" banner.
+
+### Step 5 — Feedback / learning progress
+- Feedback buttons on learned findings → `POST /findings/{identity_key}/feedback`.
+- Current verdict per finding → last item of `GET /findings/{identity_key}/feedback`.
+- Optional "label progress" widget → `GET /feedback/stats`.
+
+### Step 6 — Ops / health (optional)
+- `GET /health`, `GET /ready`, `GET /metrics` (Prometheus text) for a status strip.
+
+### Cross-cutting (applies everywhere)
+- **Poll** telemetry/outlook/alerts/findings at 30 s; fetch graph/reports/runs on open.
+- **Guard nullables:** `threshold`, `latest`, `condition_score`, `soonest`, `novelty`,
+  `weakest_subsystem`, `subsystem_key`, `last_error`, `sent_at`.
+- **All timestamps are UTC** ISO-8601 — convert for display.
+- **Two ids:** `finding_id` = this observation (React key); `identity_key` = the
+  condition across time (feedback, alerts, correlation).
+
+### CORS note for a separately-hosted frontend
+If you serve the UI from a different origin than `http://35.254.19.129:8000`, the
+browser needs the API to allow that origin. Tell the backend team your UI's origin;
+they set `SENSEMINDS_CORS_ALLOW_ORIGINS` and restart the API. Same-origin calls (and
+all server-side/Postman/`curl` calls) need nothing.
